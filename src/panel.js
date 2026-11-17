@@ -96,7 +96,7 @@
       h('div', { class: 'ecw-hint' }, 'Perfil → Token de acesso (usuário administrador da conta). Só na primeira vez de cada conta.'),
       h('label', {}, 'Nome da inbox'), f.inbox,
       h('label', {}, 'Opções'),
-      chk('sign', 'Assinar mensagens com o nome do atendente', o.sign), chk('reopen', 'Reabrir conversa resolvida', o.reopen),
+      chk('sign', 'Assinar mensagens com o nome do atendente (e da automação, se o nome estiver definido)', o.sign), chk('reopen', 'Reabrir conversa resolvida', o.reopen),
       chk('pending', 'Criar conversas como pendentes', o.pending), chk('ignoreGroups', 'Ignorar grupos', o.ignoreGroups),
       chk('importHistory', 'Importar histórico do WhatsApp (em desenvolvimento)', false, true));
     function syncCw() { cwFields.style.display = f.cwOn.checked ? '' : 'none'; }
@@ -148,7 +148,7 @@
         h('div', { class: 'ecw-hint' }, 'Cada mensagem recebida é copiada para esta URL, sem atrasar o Chatwoot. Deixe vazio para não encaminhar. No n8n use a URL de produção, com o fluxo ativo.'),
         h('label', { class: 'ecw-chk' }, f.fwV2, 'Converter para o formato da Evolution API v2 (recomendado para fluxos que já usavam a v2)'),
         h('label', {}, 'Nome que aparece no Chatwoot nas respostas da automação'), f.bot,
-        h('div', { class: 'ecw-hint' }, 'As respostas enviadas pelo n8n aparecem no Chatwoot com este nome (um Agente Bot é criado na conta). Vazio = nome do dono do token. Vale para o envio pelo endereço da ponte (/message/sendText).'),
+        h('div', { class: 'ecw-hint' }, 'As respostas enviadas pelo n8n aparecem no Chatwoot com este nome (um Agente Bot é criado na conta). Com "Assinar mensagens" ligado (seção Chatwoot), o WhatsApp também recebe *Nome:* antes do texto, como os agentes. Vale para o envio pelo endereço da ponte (/message/sendText).'),
         h('div', { class: 'ecw-act', style: 'margin-top:8px' }, test), testMsg),
       msg, h('div', { class: 'ecw-act' }, actions));
   }

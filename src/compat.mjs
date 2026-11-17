@@ -5,6 +5,7 @@ import { db } from './db.mjs';
 import { evogo } from './evogo.mjs';
 import { Chatwoot } from './chatwoot.mjs';
 import { ensureConversation } from './conversation.mjs';
+import { signBotText } from './sign.mjs';
 
 // Endpoint compatível com a Evolution API v2:  POST /message/sendText/:instancia  { number, text, delay?, quoted? }
 // Permite que fluxos do n8n feitos para a v2 troquem só o endereço. Autenticação: cabeçalho apikey
@@ -38,7 +39,7 @@ export async function handleSendText(req, res, instName, readJson) {
     } catch (e) { log.warn('não consegui espelhar no Chatwoot a mensagem enviada pela API', { inst: inst.name, err: e.message }); }
   }
   try {
-    await evogo.sendText(inst.evogo_token, { number: jid, text, id, delay: Number(b.delay) || undefined, quoted: quotedId ? { messageId: quotedId } : undefined });
+    await evogo.sendText(inst.evogo_token, { number: jid, text: signBotText(inst, text), id, delay: Number(b.delay) || undefined, quoted: quotedId ? { messageId: quotedId } : undefined });
   } catch (e) {
     if (cwRef) await cwRef.cw.updateStatus(cwRef.convId, cwRef.msgId, 'failed', e.message.slice(0, 200)).catch(() => {});
     log.error('sendText (compat) falhou', { inst: inst.name, err: e.message });
