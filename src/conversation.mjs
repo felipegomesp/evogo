@@ -37,12 +37,14 @@ export async function ensureConversation(inst, cw, chatJid, pushName) {
 
   const convs = (await cw.listConversations(contact.id)).filter((c) => c.inbox_id === inst.inbox_id).sort((a, b) => b.id - a.id);
   let conv = convs.find((c) => c.status !== 'resolved') ?? (inst.reopen_conversation ? convs[0] : undefined);
+  let created = false;
   if (!conv) {
+    created = true;
     conv = await cw.createConversation({
       source_id: ci.source_id, inbox_id: inst.inbox_id, contact_id: contact.id, status: inst.conversation_pending ? 'pending' : 'open',
     });
   }
   await db.saveConv(inst.name, chatJid, contact.id, conv.id);
-  return { instance: inst.name, chat_jid: chatJid, contact_id: contact.id, cw_conversation_id: conv.id };
+  return { instance: inst.name, chat_jid: chatJid, contact_id: contact.id, cw_conversation_id: conv.id, created };
 }
 

@@ -60,3 +60,28 @@ ALTER TABLE evogo_bridge.instances ADD COLUMN IF NOT EXISTS forward_url text;
 ALTER TABLE evogo_bridge.instances ADD COLUMN IF NOT EXISTS forward_format text NOT NULL DEFAULT 'evolution-v2';
 ALTER TABLE evogo_bridge.instances ADD COLUMN IF NOT EXISTS bot_name text;
 ALTER TABLE evogo_bridge.instances ADD COLUMN IF NOT EXISTS bot_id integer;
+
+-- amostras de eventos de histórico (para desenvolver/diagnosticar a importação); mantém só as últimas
+CREATE TABLE IF NOT EXISTS evogo_bridge.event_samples (
+  id          bigserial PRIMARY KEY,
+  instance    text NOT NULL,
+  event       text NOT NULL,
+  size        integer NOT NULL,
+  received_at timestamptz NOT NULL DEFAULT now(),
+  payload     jsonb NOT NULL
+);
+
+-- importação de histórico
+ALTER TABLE evogo_bridge.messages ADD COLUMN IF NOT EXISTS wa_ts timestamptz;
+ALTER TABLE evogo_bridge.instances ADD COLUMN IF NOT EXISTS history_days integer NOT NULL DEFAULT 90;
+CREATE TABLE IF NOT EXISTS evogo_bridge.history_imports (
+  id          bigserial PRIMARY KEY,
+  instance    text NOT NULL,
+  started_at  timestamptz NOT NULL DEFAULT now(),
+  finished_at timestamptz,
+  status      text NOT NULL DEFAULT 'running',
+  chats_total integer NOT NULL DEFAULT 0, chats_done integer NOT NULL DEFAULT 0,
+  msgs_total  integer NOT NULL DEFAULT 0, msgs_done  integer NOT NULL DEFAULT 0,
+  failed      integer NOT NULL DEFAULT 0,
+  error       text
+);

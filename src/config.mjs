@@ -11,5 +11,7 @@ export const config = {
   evogoGlobalKey: process.env.EVOGO_GLOBAL_KEY || '',
   // URL (interna) pela qual o evogo alcança esta ponte
   evogoWebhookBase: (process.env.EVOGO_WEBHOOK_BASE || 'http://evogo-chatwoot:3000').replace(/\/$/, ''),
+  // Postgres do Chatwoot: usado só para ajustar as datas das mensagens importadas (histórico)
+  chatwootDbUrl: process.env.CHATWOOT_DB_URL || '',
   debug: process.env.DEBUG === '1',
 };

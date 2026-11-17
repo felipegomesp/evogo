@@ -12,6 +12,7 @@ import { reconcile } from './webhook.mjs';
 import { forwardEvent } from './forward.mjs';
 import { ensureConversation, digits } from './conversation.mjs';
 import { handleSendText } from './compat.mjs';
+import { onHistoryEvent } from './history.mjs';
 
 // ---------- util ----------
 const queues = new Map();
@@ -232,9 +233,17 @@ const server = http.createServer(async (req, res) => {
     const body = await readJson(req);
     res.end('ok'); // responde já; processa em fila por conversa
     if (kind === 'evogo') {
-      if (body.event !== 'Message' && body.event !== 'Receipt') return;
       const inst = await db.instance(body.instanceName);
       if (!inst) return;
+      if (body.event !== 'Message' && body.event !== 'Receipt') {
+        // histórico do WhatsApp (chega no pareamento): acumula e importa quando parar de chegar
+        if (inst.import_history && body.event === 'HistorySync') {
+          log.info('histórico recebido', { inst: inst.name });
+          onHistoryEvent(inst, body);
+          if (config.debug) db.saveSample(inst.name, 'HistorySync', JSON.stringify(body).length, body).catch((e) => log.warn('amostra não gravada', { err: e.message }));
+        }
+        return;
+      }
       if (inst.forward_url) forwardEvent(inst, body); // cópia para o n8n/webhook; não bloqueia o Chatwoot
       if (!inst.chatwoot_enabled || !inst.inbox_id) return;
       const isReceipt = body.event === 'Receipt';

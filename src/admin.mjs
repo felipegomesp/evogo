@@ -7,6 +7,7 @@ import { Chatwoot } from './chatwoot.mjs';
 import { ensureInbox } from './inbox.mjs';
 import { listEvogoInstances, applyWebhook } from './webhook.mjs';
 import { testForward } from './forward.mjs';
+import { replayFromSamples } from './history.mjs';
 
 const panelJs = () => fs.readFileSync(new URL('./panel.js', import.meta.url));
 const safeEq = (a, b) => a.length === b.length && crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
@@ -19,15 +20,17 @@ const publicInst = (i) => i && ({
   enabled: i.enabled, chatwootEnabled: i.chatwoot_enabled && !!i.inbox_id,
   accountId: i.account_id, inboxId: i.inbox_id, inboxName: i.inbox_name,
   forwardUrl: i.forward_url || '', forwardFormat: i.forward_format || 'evolution-v2', botName: i.bot_name || '',
-  options: { sign: i.sign_msg, reopen: i.reopen_conversation, pending: i.conversation_pending, ignoreGroups: i.ignore_groups, importHistory: i.import_history },
+  options: { sign: i.sign_msg, reopen: i.reopen_conversation, pending: i.conversation_pending, ignoreGroups: i.ignore_groups, importHistory: i.import_history, historyDays: i.history_days },
 });
 
 async function state() {
   const [evo, mine, accounts] = await Promise.all([evogoInstances(), db.allInstances(), db.accountIds()]);
   const byName = new Map(mine.map((i) => [i.name, i]));
+  const runs = new Map(await Promise.all(evo.map(async (e) => [e.name, await db.lastRun(e.name)])));
+  const run = (r) => r && { status: r.status, chats: r.chats_total, chatsDone: r.chats_done, msgs: r.msgs_total, msgsDone: r.msgs_done, failed: r.failed, startedAt: r.started_at, finishedAt: r.finished_at, error: r.error };
   return {
     accounts,
-    instances: evo.map((e) => ({ name: e.name, connected: !!e.connected, number: (e.jid || '').split(':')[0].split('@')[0], bridge: publicInst(byName.get(e.name)) ?? null })),
+    instances: evo.map((e) => ({ name: e.name, connected: !!e.connected, number: (e.jid || '').split(':')[0].split('@')[0], bridge: publicInst(byName.get(e.name)) ?? null, lastImport: run(runs.get(e.name)) ?? null })),
   };
 }
 
@@ -68,6 +71,7 @@ async function connect(b) {
     sign_msg: o.sign ?? prev?.sign_msg ?? false, reopen_conversation: o.reopen ?? prev?.reopen_conversation ?? false,
     conversation_pending: o.pending ?? prev?.conversation_pending ?? false, ignore_groups: o.ignoreGroups ?? prev?.ignore_groups ?? true,
     import_history: o.importHistory ?? prev?.import_history ?? false,
+    history_days: Number.isInteger(Number(o.historyDays)) && Number(o.historyDays) >= 0 ? Number(o.historyDays) : prev?.history_days ?? 90,
     forward_url: forwardUrl, forward_format: b.forwardFormat === 'raw' ? 'raw' : 'evolution-v2',
     bot_name: prev?.bot_name ?? null, bot_id: prev?.bot_id ?? null,
   };
@@ -79,7 +83,14 @@ async function connect(b) {
     } else if (!botName) { row.bot_name = null; row.bot_id = null; }
   }
   await db.upsertInstance(row);
-  if (chatwootEnabled) await ensureInbox(row);
+  if (chatwootEnabled) {
+    await ensureInbox(row);
+    const after = (await db.allInstances()).find((i) => i.name === name);
+    if (prev?.account_id && (prev.account_id !== after.account_id || (prev.inbox_id && prev.inbox_id !== after.inbox_id))) {
+      await db.resetChatwootLinks(name); // evita mandar mensagens para conversas da conta/inbox anterior
+      log.info('conta/inbox alterada: cache de conversas limpo', { inst: name });
+    }
+  }
   try { await applyWebhook(row, ev.token); } catch { throw new HttpError(502, 'Salvo, mas o evogo recusou configurar o webhook.'); }
   log.info('instância configurada pelo painel', { inst: name, chatwoot: chatwootEnabled, forward: !!forwardUrl });
   return { ok: true, bridge: publicInst((await db.allInstances()).find((i) => i.name === name)) };
@@ -103,6 +114,10 @@ export async function handleAdmin(req, res, action, readJson) {
     if (!key || !safeEq(key, config.evogoGlobalKey)) throw new HttpError(401, 'Chave inválida. Entre no manager com a chave global.');
     if (req.method === 'GET' && action === 'state') return send(200, await state());
     if (req.method === 'POST' && action === 'connect') return send(200, await connect(await readJson(req)));
+    if (req.method === 'POST' && action === 'history-replay') {
+      const b = await readJson(req);
+      return send(200, await replayFromSamples(String(b.instance || ''), { dry: !!b.dry, only: Array.isArray(b.only) ? b.only.map(String) : undefined, days: Number.isInteger(b.days) ? b.days : undefined, force: !!b.force }));
+    }
     if (req.method === 'POST' && action === 'test-forward') {
       const b = await readJson(req);
       const url = parseUrl(String(b.url || '').trim());

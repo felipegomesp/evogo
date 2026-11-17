@@ -65,8 +65,21 @@ O binário do Evolution Go **não é alterado**. Toda a lógica está na ponte.
 | Nome do remetente da IA ("Lis") | Campo "Nome que aparece no Chatwoot nas respostas da automação". A ponte cria/reaproveita um **Agente Bot** com esse nome na conta (`GET/POST /agent_bots`) e envia a mensagem com `sender_type: "AgentBot"` + `sender_id`. Vazio = nome do dono do token. Com "Assinar mensagens" ligado, o texto enviado ao WhatsApp também recebe o prefixo `*Nome:*` (`src/sign.mjs`), como a assinatura dos agentes; no Chatwoot o conteúdo fica sem prefixo. Colunas `bot_name`/`bot_id` |
 | Chatwoot e webhook independentes | `instances.chatwoot_enabled` e `forward_url`; a restauração do webhook do evogo cobre as duas |
 
-### 2.5 Pendente / não implementado
-- **Importar histórico** (opção desativada no painel): usar o evento `HISTORY_SYNC` do evogo, que só ocorre no pareamento. Falta capturar payload e implementar.
+### 2.5 Importação de histórico do WhatsApp (pareamento)
+| Funcionalidade | Como funciona |
+|---|---|
+| Quando ocorre | Só no **pareamento do número (QR)**: o WhatsApp envia o histórico do celular em vários eventos `HistorySync`. O pedido sob demanda (`/chat/history-sync`) é aceito mas o WhatsApp **não respondeu** nos testes. Opção por instância "Importar o histórico…" + "Dias de histórico" (0 = tudo; padrão 90) |
+| Assinatura de eventos | Com a opção ligada a ponte assina `HISTORY_SYNC`. Durante o pareamento (instância desconectada **com QR pendente**) a vigia (`webhookReason` em `src/webhook-rules.mjs`) restaura o webhook antes do QR ser lido, pois o botão *Conectar* do manager o apaga |
+| Interpretação (`src/history-parse.mjs`) | syncType 0/2/3/6 trazem mensagens (repetidas entre si → dedupe por id); 4 = nomes (`pushnames`); `phoneNumberToLidMappings` converte conversas `@lid` em número; mensagens vazias (só carcaça), grupos (opção), status e chats de sistema (`0@s.whatsapp.net`) são descartados. Mídia vem só como referência → aviso (`📷 Imagem`, `🎤 Áudio`, `📄 arquivo`) + legenda |
+| Execução (`src/history.mjs`) | Acumula os pedaços e importa 25 s depois do último. Por conversa, em ordem cronológica: contato/conversa (`ensureConversation`) → mensagens **pela API** (`source_id WAID:…`, reply quando a original foi importada) → `saveMsg` com `wa_ts`. Idempotente (pula o que já está na conversa) |
+| Datas originais (`src/chatwoot-db.mjs`) | A API do Chatwoot **não permite** `created_at` e o painel ignora `external_created_at`. Após criar, a ponte corrige **só** `created_at/updated_at` das mensagens recém-criadas (por id, `source_id WAID:%`, mesma conta/inbox) e `created_at/last_activity_at` da conversa, numa transação; conversas **novas** ficam `resolvidas` (as já existentes não mudam de status). Exige `CHATWOOT_DB_URL` (Postgres do Chatwoot) |
+| Limite de enxurrada | O Chatwoot recusa >200 mensagens/minuto por conversa (`CONVERSATION_MESSAGE_PER_MINUTE_LIMIT`). As datas são corrigidas em **lotes de 50**, então nunca se atinge o limite; há ainda retry se ocorrer. Um `finally` sempre corrige o que foi criado, mesmo em falha |
+| Efeitos colaterais evitados | Não passa pelo encaminhamento ao n8n; mensagens importadas têm `source_id WAID:` (ignoradas pelo webhook de saída); conversas importadas resolvidas não enchem a caixa. Relatórios/SLA do Chatwoot dessas conversas ficam imprecisos (eventos criados na data da importação) |
+| Acompanhamento | Tabela `history_imports`; o painel mostra a última importação (conversas/mensagens/falhas). `POST /admin/history-replay {instance, dry?, only?, days?}` reprocessa as amostras guardadas (`event_samples`, só gravadas com `DEBUG=1`) — `dry:true` mostra o plano sem gravar |
+| Troca de conta/inbox | Limpa o cache de conversas e os vínculos de mensagens da instância (ids de conversa são **por conta**; sem isso a ponte mandava mensagens para conversas da conta anterior) |
+
+### 2.6 Pendente / não implementado
+- Importar **mídia** do histórico (hoje vira aviso; o evogo entrega só a referência, seria preciso baixar com `/message/downloadmedia`), grupos e reações do histórico.
 - Grupos, reações, atualização do nome do contato.
 - Tentar de novo mensagens que o Chatwoot marcou "Falha ao enviar".
 
@@ -92,7 +105,7 @@ Inbox de API (`POST /inboxes`, `PATCH /inboxes/:id` só com `channel.webhook_url
 `instances` (config por instância: Chatwoot e encaminhamento), `accounts` (token do Chatwoot por conta), `conversations` (chat ↔ conversa), `messages` (id WhatsApp ↔ id Chatwoot, `messageSecret`, conteúdo). O schema é criado/migrado na inicialização (`src/schema.sql`).
 
 ## 6. Variáveis de ambiente da ponte
-`DATABASE_URL`, `WEBHOOK_SECRET`, `EVOGO_URL`, `CHATWOOT_URL`, `BRIDGE_URL` (pública), `EVOGO_WEBHOOK_BASE` (interna), `EVOGO_GLOBAL_KEY`, `PORT`, `DEBUG`. Nenhum valor secreto vai dentro das imagens.
+`DATABASE_URL`, `CHATWOOT_DB_URL` (só para as datas da importação), `WEBHOOK_SECRET`, `EVOGO_URL`, `CHATWOOT_URL`, `BRIDGE_URL` (pública), `EVOGO_WEBHOOK_BASE` (interna), `EVOGO_GLOBAL_KEY`, `PORT`, `DEBUG`. Nenhum valor secreto vai dentro das imagens.
 
 ## 7. Mapa do código
 `src/index.mjs` (webhooks, entrada/saída) · `src/admin.mjs` (API do painel) · `src/panel.js` (UI no manager) · `src/chatwoot.mjs` e `src/evogo.mjs` (clientes) · `src/inbox.mjs` · `src/db.mjs` + `src/schema.sql` · `src/edit-crypto.mjs` + `src/pb.mjs` · `test/` (teste da decriptação).

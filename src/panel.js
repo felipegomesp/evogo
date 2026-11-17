@@ -40,7 +40,7 @@
     '.ecw-chk{display:flex;gap:8px;align-items:center;margin:6px 0;font-weight:400!important}.ecw-chk input{margin:0}' +
     '.ecw-act{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}.ecw-b{border:1px solid #bbc;background:#f4f5f8;color:#111;border-radius:6px;padding:8px 14px;font:inherit;cursor:pointer}.ecw-b.p{background:#1f93ff;border-color:#1f93ff;color:#fff}.ecw-b:disabled{opacity:.6;cursor:wait}' +
     '.ecw-msg{margin-top:12px;padding:8px 10px;border-radius:6px;font-size:13px;background:#eef;color:#336}.ecw-msg.err{background:#fde8e8;color:#8a1c1c}.ecw-msg.ok{background:#e0f7e6;color:#116b2c}.ecw-hint{color:#667;font-size:12px;margin-top:3px}' +
-    '.ecw-sec{border:1px solid #dde;border-radius:8px;padding:10px 12px;margin-top:12px}.ecw-sech{font-weight:700;font-size:15px;margin:0 0 4px}.ecw-sec label.ecw-sech{margin-top:0}.ecw-tag{display:inline-block;font-size:12px;padding:2px 8px;border-radius:999px;background:#e0f7e6;color:#116b2c;margin-top:6px}' +
+    '.ecw-hist{margin-left:4px}.ecw-sec{border:1px solid #dde;border-radius:8px;padding:10px 12px;margin-top:12px}.ecw-sech{font-weight:700;font-size:15px;margin:0 0 4px}.ecw-sec label.ecw-sech{margin-top:0}.ecw-tag{display:inline-block;font-size:12px;padding:2px 8px;border-radius:999px;background:#e0f7e6;color:#116b2c;margin-top:6px}' +
     '.ecw-ibtn{color:#0ea5e9}.ecw-ibtn:hover{color:#38bdf8;background:rgba(14,165,233,.1)}.ecw-ibtn.on{color:#22c55e}.ecw-ibtn.on:hover{color:#4ade80;background:rgba(34,197,94,.1)}';
   document.head.appendChild(h('style', {}, css));
 
@@ -71,6 +71,13 @@
     });
   }
 
+  function importInfo(r) {
+    if (!r) return null;
+    var st = { running: 'em andamento', concluida: 'concluída', concluida_com_falhas: 'concluída com falhas', erro: 'com erro' }[r.status] || r.status;
+    var t = 'Última importação: ' + st + ' — ' + r.chatsDone + '/' + r.chats + ' conversas, ' + r.msgsDone + '/' + r.msgs + ' mensagens' + (r.failed ? ', ' + r.failed + ' falhas' : '') + (r.error ? ' (' + r.error + ')' : '') + '.';
+    return h('div', { class: 'ecw-msg' + (r.status === 'erro' || r.failed ? ' err' : r.status === 'concluida' ? ' ok' : '') }, t);
+  }
+
   function form(box, s, inst) {
     var b = inst.bridge && inst.bridge.enabled ? inst.bridge : null;
     var o = (b && b.options) || { sign: false, reopen: false, pending: false, ignoreGroups: true, importHistory: false };
@@ -82,6 +89,7 @@
       fwUrl: h('input', { type: 'text', placeholder: 'https://seu-n8n/webhook/entrada', value: b ? b.forwardUrl : '' }),
       fwV2: h('input', { type: 'checkbox' }),
       bot: h('input', { type: 'text', placeholder: 'Ex.: Lis', value: b ? b.botName || '' : '' }),
+      histDays: h('input', { type: 'number', min: '0', value: String(((b && b.options) || {}).historyDays != null ? b.options.historyDays : 90) }),
     };
     f.cwOn.checked = b ? !!b.chatwootEnabled : true;
     f.fwV2.checked = b ? b.forwardFormat !== 'raw' : true;
@@ -98,7 +106,10 @@
       h('label', {}, 'Opções'),
       chk('sign', 'Assinar mensagens com o nome do atendente (e da automação, se o nome estiver definido)', o.sign), chk('reopen', 'Reabrir conversa resolvida', o.reopen),
       chk('pending', 'Criar conversas como pendentes', o.pending), chk('ignoreGroups', 'Ignorar grupos', o.ignoreGroups),
-      chk('importHistory', 'Importar histórico do WhatsApp (em desenvolvimento)', false, true));
+      chk('importHistory', 'Importar o histórico do WhatsApp quando o número for pareado (QR)', o.importHistory),
+      h('div', { class: 'ecw-hist' }, h('label', {}, 'Dias de histórico a importar (0 = todo o histórico)'), f.histDays,
+        h('div', { class: 'ecw-hint' }, 'O WhatsApp só envia o histórico no pareamento do número. Mídias viram um aviso (ex.: 📷 Imagem); as conversas importadas ficam resolvidas e mantêm a data original.'),
+        importInfo(inst.lastImport)));
     function syncCw() { cwFields.style.display = f.cwOn.checked ? '' : 'none'; }
     f.cwOn.addEventListener('change', syncCw); syncCw();
 
@@ -119,7 +130,7 @@
       save.disabled = true; msg.replaceChildren(h('div', { class: 'ecw-msg' }, 'Salvando…'));
       call('POST', '/connect', {
         instance: inst.name, chatwootEnabled: f.cwOn.checked, accountId: f.account.value, chatwootToken: f.token.value, inboxName: f.inbox.value,
-        options: { sign: f.sign.checked, reopen: f.reopen.checked, pending: f.pending.checked, ignoreGroups: f.ignoreGroups.checked, importHistory: f.importHistory.checked },
+        options: { sign: f.sign.checked, reopen: f.reopen.checked, pending: f.pending.checked, ignoreGroups: f.ignoreGroups.checked, importHistory: f.importHistory.checked, historyDays: Number(f.histDays.value) },
         forwardUrl: f.fwUrl.value, forwardFormat: f.fwV2.checked ? 'evolution-v2' : 'raw', botName: f.bot.value,
       }).then(function () {
         msg.replaceChildren(h('div', { class: 'ecw-msg ok' }, 'Pronto! Configuração salva e webhook do evogo ajustado.'));

@@ -22,6 +22,7 @@ export class Chatwoot {
   getContact(id) { return this.req('GET', `/contacts/${id}`).then((r) => r.payload ?? r); }
   createContact(data) { return this.req('POST', '/contacts', data).then((r) => r.payload?.contact ?? r.payload ?? r); }
   createContactInbox(id) { return this.req('POST', `/contacts/${id}/contact_inboxes`, { inbox_id: this.inbox }); }
+  getConversation(id) { return this.req('GET', `/conversations/${id}`); }
   listConversations(contactId) { return this.req('GET', `/contacts/${contactId}/conversations`).then((r) => r.payload); }
   createConversation(data) { return this.req('POST', '/conversations', data); }
 
