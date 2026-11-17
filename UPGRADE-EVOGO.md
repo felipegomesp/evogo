@@ -97,6 +97,7 @@ Para alterá-las: `POST /updateAppEnv` e depois `deployAppService`.
 5b. **Do celular → Chatwoot:** texto, reply, imagem, áudio, PDF, sticker; editar; apagar para todos.
 6. **Chatwoot → celular:** texto, reply, anexo (a conversa na inbox `<instância>-evogo`).
 7. `docker service logs evogo-chatwoot --tail 30` sem `lvl":"error"` novos.
+8b. **n8n:** no formulário da instância, clique em *Testar* (HTTP 200) e envie uma mensagem do celular; o fluxo deve receber `messages.upsert` (execuções do n8n). Envio compatível: `POST /message/sendText/<instancia>` com `apikey` deve responder 201.
 8. **Webhook persistente:** simule o botão Conectar (`POST /instance/connect` com `{"immediate":true}` e o token da instância) e confirme que em ~10 s o log mostra `webhook restaurado` e o `webhook` volta ao banco.
 
 ## 6. O que quebra numa atualização (e onde mexer)
@@ -109,6 +110,8 @@ Para alterá-las: `POST /updateAppEnv` e depois `deployAppService`.
 | Edição aparece como "não foi possível decifrar" | WhatsApp/evogo mudou o cifrado, ou o JID usado na chave | `src/edit-crypto.mjs` (teste: `test/edit-crypto.test.mjs`) |
 | Mensagens do Chatwoot não saem | Contrato de `/send/text`, `/send/media`, `quoted` mudou | `src/evogo.mjs`, `outbound()` |
 | Editar/apagar a partir do Chatwoot falha | Contrato de `/message/edit` ou `/message/delete` mudou | `src/evogo.mjs` |
+| n8n deixou de receber mensagens | O evogo mudou o formato do evento `Message` (quebra `toV2`), ou o `webhook` da instância foi zerado (a ponte restaura em ~10 s) | `src/forward.mjs` (`toV2`, teste em `test/forward.test.mjs`); capturar payload real (§7) |
+| Resposta da IA não aparece no Chatwoot / aparece com nome do agente | Evogo não emite evento para envios por API (a ponte espelha em `src/compat.mjs`); nome vem do Agente Bot (`bot_id`); `sender_type`/`sender_id` aceitos por `Messages::MessageBuilder` do Chatwoot | `src/compat.mjs`, `Chatwoot.ensureAgentBot`/`createMessage` em `src/chatwoot.mjs`. Se o Chatwoot mudar o builder, o remetente volta ao dono do token |
 | Painel dá erro ao conectar | `/instance/all` ou `/instance/connect` mudou | `src/admin.mjs` |
 | Mensagens do celular param de chegar ao Chatwoot (saída continua) | `webhook` da instância zerado: o botão *Conectar* do manager faz `POST /instance/connect` sem webhook. A ponte restaura sozinha em ~10 s (`reconcile` em `src/webhook.mjs`) | Se persistir: ver logs da ponte (`webhook divergente`), conferir `select webhook, events from instances` no banco `evogo`, e se `GET /instance/all` ainda expõe `webhook`/`events`. Manual: painel → Salvar |
 

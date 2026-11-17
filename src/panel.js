@@ -40,7 +40,7 @@
     '.ecw-chk{display:flex;gap:8px;align-items:center;margin:6px 0;font-weight:400!important}.ecw-chk input{margin:0}' +
     '.ecw-act{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}.ecw-b{border:1px solid #bbc;background:#f4f5f8;color:#111;border-radius:6px;padding:8px 14px;font:inherit;cursor:pointer}.ecw-b.p{background:#1f93ff;border-color:#1f93ff;color:#fff}.ecw-b:disabled{opacity:.6;cursor:wait}' +
     '.ecw-msg{margin-top:12px;padding:8px 10px;border-radius:6px;font-size:13px;background:#eef;color:#336}.ecw-msg.err{background:#fde8e8;color:#8a1c1c}.ecw-msg.ok{background:#e0f7e6;color:#116b2c}.ecw-hint{color:#667;font-size:12px;margin-top:3px}' +
-    '.ecw-tag{display:inline-block;font-size:12px;padding:2px 8px;border-radius:999px;background:#e0f7e6;color:#116b2c;margin-top:6px}' +
+    '.ecw-sec{border:1px solid #dde;border-radius:8px;padding:10px 12px;margin-top:12px}.ecw-sech{font-weight:700;font-size:15px;margin:0 0 4px}.ecw-sec label.ecw-sech{margin-top:0}.ecw-tag{display:inline-block;font-size:12px;padding:2px 8px;border-radius:999px;background:#e0f7e6;color:#116b2c;margin-top:6px}' +
     '.ecw-ibtn{color:#0ea5e9}.ecw-ibtn:hover{color:#38bdf8;background:rgba(14,165,233,.1)}.ecw-ibtn.on{color:#22c55e}.ecw-ibtn.on:hover{color:#4ade80;background:rgba(34,197,94,.1)}';
   document.head.appendChild(h('style', {}, css));
 
@@ -59,7 +59,7 @@
   function close() { if (overlay) { overlay.remove(); overlay = null; } }
   function openFor(name) {
     close();
-    var box = h('div', { class: 'ecw-box' }, h('h2', {}, 'Chatwoot · ' + name), h('p', { class: 'ecw-sub' }, 'Carregando…'));
+    var box = h('div', { class: 'ecw-box' }, h('h2', {}, 'Integrações · ' + name), h('p', { class: 'ecw-sub' }, 'Carregando…'));
     overlay = h('div', { class: 'ecw-ov', onclick: function (e) { if (e.target === overlay) close(); } }, box);
     document.body.appendChild(overlay);
     loadState(true).then(function (s) {
@@ -67,7 +67,7 @@
       if (!inst) throw new Error('Instância "' + name + '" não encontrada no Evolution Go.');
       form(box, s, inst);
     }).catch(function (e) {
-      box.replaceChildren(h('h2', {}, 'Chatwoot · ' + name), h('div', { class: 'ecw-msg err' }, e.message), h('div', { class: 'ecw-act' }, h('button', { class: 'ecw-b', onclick: close }, 'Fechar')));
+      box.replaceChildren(h('h2', {}, 'Integrações · ' + name), h('div', { class: 'ecw-msg err' }, e.message), h('div', { class: 'ecw-act' }, h('button', { class: 'ecw-b', onclick: close }, 'Fechar')));
     });
   }
 
@@ -75,48 +75,81 @@
     var b = inst.bridge && inst.bridge.enabled ? inst.bridge : null;
     var o = (b && b.options) || { sign: false, reopen: false, pending: false, ignoreGroups: true, importHistory: false };
     var f = {
-      account: h('input', { type: 'number', min: '1', value: b ? String(b.accountId) : '' }),
+      cwOn: h('input', { type: 'checkbox' }),
+      account: h('input', { type: 'number', min: '1', value: b && b.accountId ? String(b.accountId) : '' }),
       token: h('input', { type: 'password', autocomplete: 'off', placeholder: 'Deixe vazio se a conta já foi cadastrada' }),
-      inbox: h('input', { type: 'text', value: b ? b.inboxName : inst.name + '-evogo' }),
+      inbox: h('input', { type: 'text', value: b && b.inboxName ? b.inboxName : inst.name + '-evogo' }),
+      fwUrl: h('input', { type: 'text', placeholder: 'https://seu-n8n/webhook/entrada', value: b ? b.forwardUrl : '' }),
+      fwV2: h('input', { type: 'checkbox' }),
+      bot: h('input', { type: 'text', placeholder: 'Ex.: Lis', value: b ? b.botName || '' : '' }),
     };
+    f.cwOn.checked = b ? !!b.chatwootEnabled : true;
+    f.fwV2.checked = b ? b.forwardFormat !== 'raw' : true;
     function chk(key, label, on, disabled) {
       var i = h('input', { type: 'checkbox', disabled: disabled ? 'disabled' : false }); i.checked = !!on; f[key] = i;
       return h('label', { class: 'ecw-chk' }, i, label);
     }
-    var msg = h('div');
-    var save = h('button', { class: 'ecw-b p' }, b ? 'Salvar' : 'Conectar');
-    var known = s.accounts.length ? 'Contas já cadastradas: ' + s.accounts.join(', ') + '.' : 'Nenhuma conta cadastrada ainda.';
-    save.addEventListener('click', function () {
-      save.disabled = true; msg.replaceChildren(h('div', { class: 'ecw-msg' }, 'Conectando…'));
-      call('POST', '/connect', {
-        instance: inst.name, accountId: f.account.value, chatwootToken: f.token.value, inboxName: f.inbox.value,
-        options: { sign: f.sign.checked, reopen: f.reopen.checked, pending: f.pending.checked, ignoreGroups: f.ignoreGroups.checked, importHistory: f.importHistory.checked },
-      }).then(function () {
-        msg.replaceChildren(h('div', { class: 'ecw-msg ok' }, 'Pronto! Inbox criada e webhook configurado.'));
-        loadState(true).then(mark); setTimeout(close, 1400);
-      }).catch(function (e) { save.disabled = false; msg.replaceChildren(h('div', { class: 'ecw-msg err' }, e.message)); });
-    });
-    var actions = [h('button', { class: 'ecw-b', onclick: close }, 'Fechar')];
-    if (b) {
-      actions.push(h('button', { class: 'ecw-b', onclick: function () {
-        if (!confirm('Parar de espelhar "' + inst.name + '" no Chatwoot? As conversas existentes são mantidas.')) return;
-        call('POST', '/disconnect', { instance: inst.name }).then(function () { return loadState(true); }).then(function () { mark(); close(); })
-          .catch(function (e) { msg.replaceChildren(h('div', { class: 'ecw-msg err' }, e.message)); });
-      } }, 'Desconectar'));
-    }
-    actions.push(save);
-    box.replaceChildren(
-      h('h2', {}, 'Chatwoot · ' + inst.name),
-      h('p', { class: 'ecw-sub' }, (inst.number ? '+' + inst.number + ' · ' : '') + 'Espelha as mensagens deste número numa inbox do Chatwoot.'),
-      b ? h('span', { class: 'ecw-tag' }, 'Conectada · conta ' + b.accountId + ' · inbox ' + b.inboxName) : null,
-      h('label', {}, 'ID da conta no Chatwoot'), f.account, h('div', { class: 'ecw-hint' }, known),
+    var cwFields = h('div', {},
+      h('label', {}, 'ID da conta no Chatwoot'), f.account,
+      h('div', { class: 'ecw-hint' }, s.accounts.length ? 'Contas já cadastradas: ' + s.accounts.join(', ') + '.' : 'Nenhuma conta cadastrada ainda.'),
       h('label', {}, 'Token de acesso do Chatwoot'), f.token,
       h('div', { class: 'ecw-hint' }, 'Perfil → Token de acesso (usuário administrador da conta). Só na primeira vez de cada conta.'),
       h('label', {}, 'Nome da inbox'), f.inbox,
       h('label', {}, 'Opções'),
       chk('sign', 'Assinar mensagens com o nome do atendente', o.sign), chk('reopen', 'Reabrir conversa resolvida', o.reopen),
       chk('pending', 'Criar conversas como pendentes', o.pending), chk('ignoreGroups', 'Ignorar grupos', o.ignoreGroups),
-      chk('importHistory', 'Importar histórico do WhatsApp (em desenvolvimento)', false, true),
+      chk('importHistory', 'Importar histórico do WhatsApp (em desenvolvimento)', false, true));
+    function syncCw() { cwFields.style.display = f.cwOn.checked ? '' : 'none'; }
+    f.cwOn.addEventListener('change', syncCw); syncCw();
+
+    var msg = h('div'), testMsg = h('div');
+    var save = h('button', { class: 'ecw-b p' }, b && b.enabled ? 'Salvar' : 'Conectar');
+    var test = h('button', { class: 'ecw-b', type: 'button' }, 'Testar');
+    test.addEventListener('click', function () {
+      var url = f.fwUrl.value.trim();
+      if (!url) { testMsg.replaceChildren(h('div', { class: 'ecw-msg err' }, 'Informe a URL do webhook.')); return; }
+      test.disabled = true; testMsg.replaceChildren(h('div', { class: 'ecw-msg' }, 'Testando…'));
+      call('POST', '/test-forward', { url: url, instance: inst.name }).then(function (r) {
+        test.disabled = false;
+        testMsg.replaceChildren(h('div', { class: 'ecw-msg ' + (r.ok ? 'ok' : 'err') },
+          r.ok ? 'Webhook respondeu HTTP ' + r.status + ' em ' + r.ms + ' ms.' : (r.error ? 'Falhou: ' + r.error : 'Webhook respondeu HTTP ' + r.status + '. No n8n, o fluxo está ativo e é a URL de produção (/webhook/…, não /webhook-test/…)?')));
+      }).catch(function (e) { test.disabled = false; testMsg.replaceChildren(h('div', { class: 'ecw-msg err' }, e.message)); });
+    });
+    save.addEventListener('click', function () {
+      save.disabled = true; msg.replaceChildren(h('div', { class: 'ecw-msg' }, 'Salvando…'));
+      call('POST', '/connect', {
+        instance: inst.name, chatwootEnabled: f.cwOn.checked, accountId: f.account.value, chatwootToken: f.token.value, inboxName: f.inbox.value,
+        options: { sign: f.sign.checked, reopen: f.reopen.checked, pending: f.pending.checked, ignoreGroups: f.ignoreGroups.checked, importHistory: f.importHistory.checked },
+        forwardUrl: f.fwUrl.value, forwardFormat: f.fwV2.checked ? 'evolution-v2' : 'raw', botName: f.bot.value,
+      }).then(function () {
+        msg.replaceChildren(h('div', { class: 'ecw-msg ok' }, 'Pronto! Configuração salva e webhook do evogo ajustado.'));
+        loadState(true).then(mark); setTimeout(close, 1400);
+      }).catch(function (e) { save.disabled = false; msg.replaceChildren(h('div', { class: 'ecw-msg err' }, e.message)); });
+    });
+    var actions = [h('button', { class: 'ecw-b', onclick: close }, 'Fechar')];
+    if (b && b.enabled) {
+      actions.push(h('button', { class: 'ecw-b', onclick: function () {
+        if (!confirm('Desligar TODAS as integrações de "' + inst.name + '" (Chatwoot e webhook)? As conversas existentes são mantidas.')) return;
+        call('POST', '/disconnect', { instance: inst.name }).then(function () { return loadState(true); }).then(function () { mark(); close(); })
+          .catch(function (e) { msg.replaceChildren(h('div', { class: 'ecw-msg err' }, e.message)); });
+      } }, 'Desconectar tudo'));
+    }
+    actions.push(save);
+    var tags = [];
+    if (b && b.chatwootEnabled) tags.push('Chatwoot · conta ' + b.accountId);
+    if (b && b.forwardUrl) tags.push('Webhook ativo');
+    box.replaceChildren(
+      h('h2', {}, 'Integrações · ' + inst.name),
+      h('p', { class: 'ecw-sub' }, (inst.number ? '+' + inst.number + ' · ' : '') + 'Escolha o que esta instância deve alimentar.'),
+      tags.length ? h('span', { class: 'ecw-tag' }, tags.join(' · ')) : null,
+      h('div', { class: 'ecw-sec' }, h('label', { class: 'ecw-chk ecw-sech' }, f.cwOn, 'Chatwoot'), cwFields),
+      h('div', { class: 'ecw-sec' }, h('div', { class: 'ecw-sech' }, 'Automação (n8n ou outro webhook)'),
+        h('label', {}, 'URL do webhook'), f.fwUrl,
+        h('div', { class: 'ecw-hint' }, 'Cada mensagem recebida é copiada para esta URL, sem atrasar o Chatwoot. Deixe vazio para não encaminhar. No n8n use a URL de produção, com o fluxo ativo.'),
+        h('label', { class: 'ecw-chk' }, f.fwV2, 'Converter para o formato da Evolution API v2 (recomendado para fluxos que já usavam a v2)'),
+        h('label', {}, 'Nome que aparece no Chatwoot nas respostas da automação'), f.bot,
+        h('div', { class: 'ecw-hint' }, 'As respostas enviadas pelo n8n aparecem no Chatwoot com este nome (um Agente Bot é criado na conta). Vazio = nome do dono do token. Vale para o envio pelo endereço da ponte (/message/sendText).'),
+        h('div', { class: 'ecw-act', style: 'margin-top:8px' }, test), testMsg),
       msg, h('div', { class: 'ecw-act' }, actions));
   }
 
@@ -135,9 +168,9 @@
     var byName = {};
     ((cache.data && cache.data.instances) || []).forEach(function (i) { byName[i.name] = i; });
     document.querySelectorAll('[data-ecw]').forEach(function (b) {
-      var i = byName[b.getAttribute('data-ecw')], on = !!(i && i.bridge && i.bridge.enabled);
+      var i = byName[b.getAttribute('data-ecw')], on = !!(i && i.bridge && i.bridge.enabled && (i.bridge.chatwootEnabled || i.bridge.forwardUrl));
       b.classList.toggle('on', on);
-      b.title = on ? 'Chatwoot: conectado (conta ' + i.bridge.accountId + ') · clique para editar' : 'Integração Chatwoot';
+      b.title = on ? 'Integrações ativas:' + (i.bridge.chatwootEnabled ? ' Chatwoot (conta ' + i.bridge.accountId + ')' : '') + (i.bridge.forwardUrl ? ' · Webhook n8n' : '') + ' — clique para editar' : 'Integrações: Chatwoot e webhook (n8n)';
     });
   }
   function enhance() {
@@ -151,7 +184,7 @@
       if (!gear) return;
       var b = gear.cloneNode(false);
       b.className = gear.className.replace(/\btext-gray-\d+\b|\bhover:text-gray-\d+\b|\bhover:bg-gray-\d+\/\d+\b/g, '') + ' ecw-ibtn';
-      b.removeAttribute('disabled'); b.setAttribute('type', 'button'); b.setAttribute('data-ecw', name); b.title = 'Integração Chatwoot';
+      b.removeAttribute('disabled'); b.setAttribute('type', 'button'); b.setAttribute('data-ecw', name); b.title = 'Integrações: Chatwoot e webhook (n8n)';
       b.innerHTML = ICON;
       b.addEventListener('click', function (ev) { ev.stopPropagation(); openFor(name); });
       var sep = h('div', { class: 'w-px bg-sidebar-border' });

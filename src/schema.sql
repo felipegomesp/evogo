@@ -47,7 +47,16 @@ CREATE TABLE IF NOT EXISTS evogo_bridge.accounts (
 );
 ALTER TABLE evogo_bridge.instances ADD COLUMN IF NOT EXISTS import_history boolean NOT NULL DEFAULT false;
 INSERT INTO evogo_bridge.accounts(account_id, chatwoot_token)
-  SELECT DISTINCT ON (account_id) account_id, chatwoot_token FROM evogo_bridge.instances
+  SELECT DISTINCT ON (account_id) account_id, chatwoot_token FROM evogo_bridge.instances WHERE account_id IS NOT NULL AND chatwoot_token IS NOT NULL
   ON CONFLICT DO NOTHING;
 
 ALTER TABLE evogo_bridge.messages ADD COLUMN IF NOT EXISTS wa_status text;
+
+-- Chatwoot e encaminhamento (n8n/webhook) são independentes por instância
+ALTER TABLE evogo_bridge.instances ALTER COLUMN account_id DROP NOT NULL;
+ALTER TABLE evogo_bridge.instances ALTER COLUMN chatwoot_token DROP NOT NULL;
+ALTER TABLE evogo_bridge.instances ADD COLUMN IF NOT EXISTS chatwoot_enabled boolean NOT NULL DEFAULT true;
+ALTER TABLE evogo_bridge.instances ADD COLUMN IF NOT EXISTS forward_url text;
+ALTER TABLE evogo_bridge.instances ADD COLUMN IF NOT EXISTS forward_format text NOT NULL DEFAULT 'evolution-v2';
+ALTER TABLE evogo_bridge.instances ADD COLUMN IF NOT EXISTS bot_name text;
+ALTER TABLE evogo_bridge.instances ADD COLUMN IF NOT EXISTS bot_id integer;

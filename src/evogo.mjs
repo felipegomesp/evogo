@@ -13,7 +13,7 @@ async function call(token, method, path, body) {
 }
 
 export const evogo = {
-  sendText: (t, { number, text, id, quoted }) => call(t, 'POST', '/send/text', { number, text, id, quoted, formatJid: false }),
+  sendText: (t, { number, text, id, quoted, delay }) => call(t, 'POST', '/send/text', { number, text, id, quoted, delay, formatJid: false }),
   sendMedia: (t, { number, url, type, caption, filename, id, quoted }) =>
     call(t, 'POST', '/send/media', { number, url, type, caption, filename, id, quoted, formatJid: false }),
   edit: (t, { chat, messageId, message }) => call(t, 'POST', '/message/edit', { chat, messageId, message }),

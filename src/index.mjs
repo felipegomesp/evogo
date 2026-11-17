@@ -9,6 +9,9 @@ import { decryptEdit } from './edit-crypto.mjs';
 import { ensureInbox } from './inbox.mjs';
 import { handleAdmin } from './admin.mjs';
 import { reconcile } from './webhook.mjs';
+import { forwardEvent } from './forward.mjs';
+import { ensureConversation, digits } from './conversation.mjs';
+import { handleSendText } from './compat.mjs';
 
 // ---------- util ----------
 const queues = new Map();
@@ -19,18 +22,7 @@ function enqueue(key, fn) {
   next.finally(() => { if (queues.get(key) === next) queues.delete(key); }).catch(() => {});
   return next;
 }
-const digits = (jid) => (jid || '').split('@')[0].split(':')[0].replace(/\D/g, '');
 const newWaId = () => '3EB0' + crypto.randomBytes(14).toString('hex').toUpperCase();
-
-// variações do nono dígito brasileiro (55 + DDD + 9 + 8 dígitos)
-function phoneVariants(p) {
-  const out = new Set([p]);
-  if (p.startsWith('55')) {
-    if (p.length === 13 && p[4] === '9') out.add(p.slice(0, 4) + p.slice(5));
-    if (p.length === 12) out.add(p.slice(0, 4) + '9' + p.slice(4));
-  }
-  return [...out];
-}
 
 const MEDIA = {
   imageMessage: { ext: 'jpg' }, videoMessage: { ext: 'mp4' }, audioMessage: { ext: 'ogg' },
@@ -39,40 +31,6 @@ const MEDIA = {
 const extFromMime = (m) => ({
   'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'video/mp4': 'mp4', 'audio/ogg': 'ogg', 'application/pdf': 'pdf',
 }[(m || '').split(';')[0]]);
-
-// ---------- Chatwoot: contato e conversa ----------
-async function ensureConversation(inst, cw, chatJid, pushName) {
-  const cached = await db.conv(inst.name, chatJid);
-  if (cached) return cached;
-  const phone = digits(chatJid);
-  const variants = phoneVariants(phone);
-
-  let contact;
-  for (const v of variants) {
-    const found = (await cw.searchContact(v)).find((c) => variants.includes(digits(c.phone_number)));
-    if (found) { contact = found; break; }
-  }
-  if (!contact) {
-    contact = await cw.createContact({ inbox_id: inst.inbox_id, name: pushName || '+' + phone, phone_number: '+' + phone, identifier: phone });
-  }
-  let full = await cw.getContact(contact.id);
-  let ci = (full.contact_inboxes || []).find((x) => x.inbox?.id === inst.inbox_id);
-  if (!ci) {
-    await cw.createContactInbox(contact.id);
-    full = await cw.getContact(contact.id);
-    ci = (full.contact_inboxes || []).find((x) => x.inbox?.id === inst.inbox_id);
-  }
-
-  const convs = (await cw.listConversations(contact.id)).filter((c) => c.inbox_id === inst.inbox_id).sort((a, b) => b.id - a.id);
-  let conv = convs.find((c) => c.status !== 'resolved') ?? (inst.reopen_conversation ? convs[0] : undefined);
-  if (!conv) {
-    conv = await cw.createConversation({
-      source_id: ci.source_id, inbox_id: inst.inbox_id, contact_id: contact.id, status: inst.conversation_pending ? 'pending' : 'open',
-    });
-  }
-  await db.saveConv(inst.name, chatJid, contact.id, conv.id);
-  return { instance: inst.name, chat_jid: chatJid, contact_id: contact.id, cw_conversation_id: conv.id };
-}
 
 // ---------- WhatsApp -> Chatwoot ----------
 function extract(m) {
@@ -266,6 +224,7 @@ const server = http.createServer(async (req, res) => {
   const [, kind, p1, p2] = req.url.split('?')[0].split('/');
   try {
     if (kind === 'admin') { await handleAdmin(req, res, p1, readJson); return; }
+    if (kind === 'message' && p1 === 'sendText' && req.method === 'POST') { await handleSendText(req, res, req.url.split('?')[0].split('/')[3], readJson); return; }
     if (req.method === 'GET' && kind === 'health') { res.end('ok'); return; }
     if (req.method !== 'POST') { res.statusCode = 404; res.end(); return; }
     const secret = kind === 'evogo' ? p1 : p2;
@@ -275,14 +234,16 @@ const server = http.createServer(async (req, res) => {
     if (kind === 'evogo') {
       if (body.event !== 'Message' && body.event !== 'Receipt') return;
       const inst = await db.instance(body.instanceName);
-      if (!inst?.inbox_id) return;
+      if (!inst) return;
+      if (inst.forward_url) forwardEvent(inst, body); // cópia para o n8n/webhook; não bloqueia o Chatwoot
+      if (!inst.chatwoot_enabled || !inst.inbox_id) return;
       const isReceipt = body.event === 'Receipt';
       const chat = (isReceipt ? body.data?.Chat : body.data?.Info?.Chat) ?? 'x';
       enqueue(`${inst.name}|${chat}`, () => (isReceipt ? receipt(inst, body.data) : inbound(inst, body.data)))
         .catch((e) => log.error('inbound falhou', { err: e.message, stack: config.debug ? e.stack : undefined }));
     } else if (kind === 'chatwoot') {
       const inst = await db.instance(p1);
-      if (!inst) return;
+      if (!inst?.chatwoot_enabled) return;
       enqueue(`${inst.name}|cw${body.conversation?.id}`, () => outbound(inst, body))
         .catch((e) => log.error('outbound falhou', { err: e.message }));
     }
@@ -293,7 +254,7 @@ const server = http.createServer(async (req, res) => {
 });
 
 await migrate();
-for (const inst of await db.instances()) {
+for (const inst of (await db.instances()).filter((i) => i.chatwoot_enabled && i.account_id)) {
   await ensureInbox(inst).catch((e) => log.error('ensureInbox falhou', { inst: inst.name, err: e.message }));
 }
 server.listen(config.port, () => log.info('evogo-chatwoot no ar', { port: config.port }));

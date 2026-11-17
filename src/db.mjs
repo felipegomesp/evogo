@@ -19,11 +19,12 @@ export const db = {
     await pool.query(`update ${T}instances set chatwoot_token=$2 where account_id=$1`, [id, token]);
   },
   async upsertInstance(i) {
-    await pool.query(`insert into ${T}instances(name,evogo_token,account_id,chatwoot_token,inbox_id,inbox_name,sign_msg,reopen_conversation,conversation_pending,ignore_groups,import_history,enabled)
-      values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,true)
+    await pool.query(`insert into ${T}instances(name,evogo_token,account_id,chatwoot_token,inbox_id,inbox_name,sign_msg,reopen_conversation,conversation_pending,ignore_groups,import_history,chatwoot_enabled,forward_url,forward_format,bot_name,bot_id,enabled)
+      values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,true)
       on conflict (name) do update set evogo_token=$2, account_id=$3, chatwoot_token=$4, inbox_id=$5, inbox_name=$6, sign_msg=$7,
-        reopen_conversation=$8, conversation_pending=$9, ignore_groups=$10, import_history=$11, enabled=true`,
-      [i.name, i.evogo_token, i.account_id, i.chatwoot_token, i.inbox_id ?? null, i.inbox_name, i.sign_msg, i.reopen_conversation, i.conversation_pending, i.ignore_groups, i.import_history]);
+        reopen_conversation=$8, conversation_pending=$9, ignore_groups=$10, import_history=$11, chatwoot_enabled=$12, forward_url=$13, forward_format=$14, bot_name=$15, bot_id=$16, enabled=true`,
+      [i.name, i.evogo_token, i.account_id ?? null, i.chatwoot_token ?? null, i.inbox_id ?? null, i.inbox_name ?? null, !!i.sign_msg, !!i.reopen_conversation,
+        !!i.conversation_pending, i.ignore_groups !== false, !!i.import_history, !!i.chatwoot_enabled, i.forward_url || null, i.forward_format || 'evolution-v2', i.bot_name || null, i.bot_id ?? null]);
   },
   async disable(name) { await pool.query(`update ${T}instances set enabled=false where name=$1`, [name]); },
   async instance(name) { return (await pool.query(`select * from ${T}instances where name=$1 and enabled`, [name])).rows[0]; },

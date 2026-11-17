@@ -46,7 +46,7 @@ O binário do Evolution Go **não é alterado**. Toda a lógica está na ponte.
 | Funcionalidade | Como funciona |
 |---|---|
 | Ícone **Chatwoot** em cada cartão de instância | Injetado por `panel.js` na barra de ações (`/manager/instances`); verde = conectada |
-| Formulário por instância | ID da conta, token do Chatwoot (só na 1ª vez por conta), nome da inbox, opções (assinar, reabrir, pendente, ignorar grupos) |
+| Formulário por instância | Seção **Chatwoot** (liga/desliga; ID da conta, token só na 1ª vez por conta, nome da inbox, opções: assinar, reabrir, pendente, ignorar grupos) e seção **Automação** (URL do webhook, conversão para v2, Testar) |
 | Conectar | Valida o token, cria/atualiza a inbox de API (com o webhook da ponte), grava a instância e configura o webhook no evogo (`POST /instance/connect`) |
 | Desconectar | Marca a instância como desativada na ponte (conversas mantidas) |
 | Autenticação | A chave global do evogo (a mesma do login do manager) no cabeçalho `apikey`; a ponte compara com `EVOGO_GLOBAL_KEY` |
@@ -54,7 +54,18 @@ O binário do Evolution Go **não é alterado**. Toda a lógica está na ponte.
 | Plano B | `window.__evogoChatwoot.open("instancia")` no console do navegador |
 | **Auto-recuperação do webhook** | O botão *Conectar* do manager (e reinícios) **zera o webhook** da instância no evogo. A cada 10 s a ponte compara `webhook` e `events` de `GET /instance/all` com o esperado e, se divergirem em uma instância **conectada**, reaplica via `POST /instance/connect` (`src/webhook.mjs`). Mensagens recebidas na janela de até ~10 s entre o reset e a restauração não chegam à ponte |
 
-### 2.4 Pendente / não implementado
+### 2.4 Encaminhamento para n8n / webhook (automações de IA)
+| Funcionalidade | Como funciona |
+|---|---|
+| Webhook por instância | Campo **URL do webhook** no formulário da instância. Cada mensagem recebida é **copiada** (fire-and-forget, timeout 10 s) para essa URL; falha do n8n **nunca** afeta o Chatwoot. Funciona com ou sem Chatwoot na instância |
+| Formato Evolution API v2 (padrão) | A ponte converte o evento do evogo para `messages.upsert` da v2 (`data.key.{remoteJid,fromMe,id,remoteJidAlt}`, `pushName`, `message`, `messageType`, `contextInfo`, `message.base64` nas mídias), para reaproveitar fluxos do n8n feitos para a v2 **sem alterá-los**. O corpo inclui `apikey` (token da instância), como a v2, pois fluxos costumam lê-la de `body.apikey` para chamar o envio. Edições/apagar/protocolo não são encaminhados nesse formato. Opção "raw" envia o evento original (sem `instanceToken`) |
+| Botão **Testar** | Envia `{event:"evogo.test"}` à URL e mostra o HTTP/latência. Fluxos que filtram `messages.upsert` ignoram o teste |
+| Envio compatível com a v2 | `POST /message/sendText/:instancia` `{number,text,delay?,quoted?}` com cabeçalho `apikey` (token da instância no evogo ou chave global). Permite que o n8n troque só o endereço dos nós de envio; a mensagem enviada é espelhada no Chatwoot como *outgoing* (via evento `IsFromMe` do evogo). Só `sendText` por enquanto |
+| Mensagem da IA no Chatwoot | O evogo **não emite evento** para mensagens enviadas pela API, então a ponte cria a mensagem no Chatwoot **antes** de enviar (*outgoing*, `source_id = WAID:…`), para o recibo de entregue/lido já achar o mapeamento. Falha de envio marca a mensagem como `failed` com o motivo; falha de espelhamento não impede o envio |
+| Nome do remetente da IA ("Lis") | Campo "Nome que aparece no Chatwoot nas respostas da automação". A ponte cria/reaproveita um **Agente Bot** com esse nome na conta (`GET/POST /agent_bots`) e envia a mensagem com `sender_type: "AgentBot"` + `sender_id`. Vazio = nome do dono do token. Colunas `bot_name`/`bot_id` |
+| Chatwoot e webhook independentes | `instances.chatwoot_enabled` e `forward_url`; a restauração do webhook do evogo cobre as duas |
+
+### 2.5 Pendente / não implementado
 - **Importar histórico** (opção desativada no painel): usar o evento `HISTORY_SYNC` do evogo, que só ocorre no pareamento. Falta capturar payload e implementar.
 - Grupos, reações, atualização do nome do contato.
 - Tentar de novo mensagens que o Chatwoot marcou "Falha ao enviar".
@@ -78,7 +89,7 @@ Inbox de API (`POST /inboxes`, `PATCH /inboxes/:id` só com `channel.webhook_url
 **Restrição:** o Chatwoot 4.x bloqueia webhooks para IPs privados, então a ponte precisa de **domínio público HTTPS** (alternativa: `SAFE_FETCH_ALLOW_PRIVATE_NETWORK=true`, que desliga a proteção SSRF).
 
 ## 5. Dados (schema `evogo_bridge` no Postgres)
-`instances` (config por instância), `accounts` (token do Chatwoot por conta), `conversations` (chat ↔ conversa), `messages` (id WhatsApp ↔ id Chatwoot, `messageSecret`, conteúdo). O schema é criado/migrado na inicialização (`src/schema.sql`).
+`instances` (config por instância: Chatwoot e encaminhamento), `accounts` (token do Chatwoot por conta), `conversations` (chat ↔ conversa), `messages` (id WhatsApp ↔ id Chatwoot, `messageSecret`, conteúdo). O schema é criado/migrado na inicialização (`src/schema.sql`).
 
 ## 6. Variáveis de ambiente da ponte
 `DATABASE_URL`, `WEBHOOK_SECRET`, `EVOGO_URL`, `CHATWOOT_URL`, `BRIDGE_URL` (pública), `EVOGO_WEBHOOK_BASE` (interna), `EVOGO_GLOBAL_KEY`, `PORT`, `DEBUG`. Nenhum valor secreto vai dentro das imagens.

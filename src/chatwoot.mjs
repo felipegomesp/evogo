@@ -26,22 +26,30 @@ export class Chatwoot {
   createConversation(data) { return this.req('POST', '/conversations', data); }
 
   // Mensagem de texto e/ou anexos (multipart quando há arquivo).
-  async createMessage(convId, { content, type, sourceId, replyTo, files, isPrivate }) {
+  async createMessage(convId, { content, type, sourceId, replyTo, files, isPrivate, senderBotId }) {
     if (files?.length) {
       const f = new FormData();
       f.set('content', content ?? '');
       f.set('message_type', type);
       f.set('private', String(!!isPrivate));
       if (sourceId) f.set('source_id', sourceId);
+      if (senderBotId) { f.set('sender_type', 'AgentBot'); f.set('sender_id', String(senderBotId)); }
       if (replyTo) f.set('content_attributes[in_reply_to]', String(replyTo));
       for (const file of files) f.append('attachments[]', new Blob([file.data], { type: file.mime }), file.name);
       return this.req('POST', `/conversations/${convId}/messages`, null, f);
     }
     return this.req('POST', `/conversations/${convId}/messages`, {
       content, message_type: type, private: !!isPrivate, source_id: sourceId,
+      ...(senderBotId ? { sender_type: 'AgentBot', sender_id: senderBotId } : {}),
       content_attributes: replyTo ? { in_reply_to: replyTo } : undefined,
     });
   }
-  updateStatus(convId, msgId, status) { return this.req('PATCH', `/conversations/${convId}/messages/${msgId}`, { status }); }
+  updateStatus(convId, msgId, status, externalError) { return this.req('PATCH', `/conversations/${convId}/messages/${msgId}`, { status, external_error: externalError }); }
+  // Agente Bot = remetente com nome próprio (ex.: "Lis") nas mensagens criadas pela automação
+  async ensureAgentBot(name) {
+    const r = await this.req('GET', '/agent_bots');
+    const list = Array.isArray(r) ? r : r.payload ?? [];
+    return list.find((b) => b.name === name) ?? this.req('POST', '/agent_bots', { name, description: 'Respostas da automação (n8n) via evogo-chatwoot' });
+  }
   deleteMessage(convId, msgId) { return this.req('DELETE', `/conversations/${convId}/messages/${msgId}`); }
 }
