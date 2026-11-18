@@ -114,6 +114,7 @@ Para alterá-las: `POST /updateAppEnv` e depois `deployAppService`.
 | n8n deixou de receber mensagens | O evogo mudou o formato do evento `Message` (quebra `toV2`), ou o `webhook` da instância foi zerado (a ponte restaura em ~10 s) | `src/forward.mjs` (`toV2`, teste em `test/forward.test.mjs`); capturar payload real (§7) |
 | Resposta da IA não aparece no Chatwoot / aparece com nome do agente | Evogo não emite evento para envios por API (a ponte espelha em `src/compat.mjs`); nome vem do Agente Bot (`bot_id`); `sender_type`/`sender_id` aceitos por `Messages::MessageBuilder` do Chatwoot | `src/compat.mjs`, `Chatwoot.ensureAgentBot`/`createMessage` em `src/chatwoot.mjs`. Se o Chatwoot mudar o builder, o remetente volta ao dono do token |
 | Importação de histórico não acontece / falha | Formato do `HistorySync` mudou (`data.Data.{syncType,conversations,pushnames,phoneNumberToLidMappings}`), webhook sem `HISTORY_SYNC`, `CHATWOOT_DB_URL` ausente, limite de 200 msg/min do Chatwoot, ou colunas `messages.{account_id,inbox_id,source_id,created_at}` / `conversations.{display_id,status,last_activity_at}` mudaram | `src/history-parse.mjs` (teste `test/history-parse.test.mjs`), `src/chatwoot-db.mjs`. Reprocessar: `POST /admin/history-replay` (precisa das amostras: `DEBUG=1` no pareamento) |
+| Mensagens de grupo não chegam / não saem (log `POST /contacts -> 422 Phone number should be in e164 format`) | Contato de grupo criado com o JID como telefone. Corrigido na 0.3.1: grupo usa `identifier` sem `phone_number` | `ensureConversation`/`findOrCreateGroupContact` em `src/conversation.mjs`; `POST /group/info` em `src/evogo.mjs`. Confirme que *ignorar grupos* está desligado na instância |
 | Painel dá erro ao conectar | `/instance/all` ou `/instance/connect` mudou | `src/admin.mjs` |
 | Mensagens do celular param de chegar ao Chatwoot (saída continua) | `webhook` da instância zerado: o botão *Conectar* do manager faz `POST /instance/connect` sem webhook. A ponte restaura sozinha em ~10 s (`reconcile` em `src/webhook.mjs`) | Se persistir: ver logs da ponte (`webhook divergente`), conferir `select webhook, events from instances` no banco `evogo`, e se `GET /instance/all` ainda expõe `webhook`/`events`. Manual: painel → Salvar |
 
@@ -132,6 +133,6 @@ Fatos já descobertos (v0.7.3): evento `Message`; `Info.Edit` = `"7"` apagar, `"
 ## 8. Lacunas conhecidas
 
 - **Importar histórico** (opção no painel, desativada): o evento `HistorySync` existe no evogo; falta capturar payload e implementar.
-- Grupos ignorados por padrão; reações não são espelhadas. Marcar como lido no WhatsApp quando o atendente abre a conversa também não é feito.
+- Grupos ignorados por padrão (ligue em *ignorar grupos* por instância); reações não são espelhadas. Marcar como lido no WhatsApp quando o atendente abre a conversa também não é feito.
 - Edição feita a partir do Chatwoot depende de a UI do Chatwoot emitir `message_updated` com conteúdo novo.
 - Mensagens `Falha ao enviar` antigas no Chatwoot (de antes de o webhook ficar público) não são reenviadas.

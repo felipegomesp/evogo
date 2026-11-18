@@ -18,5 +18,6 @@ export const evogo = {
     call(t, 'POST', '/send/media', { number, url, type, caption, filename, id, quoted, formatJid: false }),
   edit: (t, { chat, messageId, message }) => call(t, 'POST', '/message/edit', { chat, messageId, message }),
   delete: (t, { chat, messageId }) => call(t, 'POST', '/message/delete', { chat, messageId }),
+  groupInfo: (t, jid) => call(t, 'POST', '/group/info', { groupJid: jid }),
   markRead: (t, { number, ids }) => call(t, 'POST', '/message/markread', { number, id: ids }),
 };

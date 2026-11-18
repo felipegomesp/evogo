@@ -28,7 +28,8 @@ O binário do Evolution Go **não é alterado**. Toda a lógica está na ponte.
 | Entregue / lido (tiques) | Evento `Receipt` do evogo (assinado como `READ_RECEIPT`): `MessageIDs` + `Type` (`""` = entregue, `read`/`played` = lido) → `PATCH /conversations/:c/messages/:m {status}` no Chatwoot (só inbox de API). Só para mensagens enviadas pelo Chatwoot; nunca rebaixa o status (lido → entregue). Status guardado em `messages.wa_status` |
 | Anti-duplicidade | Cada `Info.ID` do WhatsApp é gravado; reentregas do webhook são ignoradas |
 | Tipos não suportados | Viram texto `[mensagem não suportada: <tipo>]` (localização, contato, enquete, etc.) |
-| Ignorados | Grupos (opção), status/broadcast, newsletters, reações, protocolo interno |
+| Grupos | Com "ignorar grupos" desligado, o grupo vira **uma conversa só**, identificada pelo JID (`…@g.us`). O contato do grupo é criado **sem `phone_number`** (o JID tem 18 dígitos e o Chatwoot recusa como não-e164), com `identifier = JID` e nome `Nome do grupo (GROUP)` (nome via `POST /group/info`, best-effort). Mensagens de participantes chegam com o prefixo `*PushName:*`; as enviadas do celular não. Do Chatwoot para o grupo: o JID vem do mapeamento da conversa (`sendText` com `number = JID`) |
+| Ignorados | Grupos (se a opção estiver ligada), status/broadcast, newsletters, reações, protocolo interno |
 
 ### 2.2 Chatwoot → WhatsApp (saída)
 | Funcionalidade | Como funciona |
@@ -80,7 +81,7 @@ O binário do Evolution Go **não é alterado**. Toda a lógica está na ponte.
 
 ### 2.6 Pendente / não implementado
 - Importar **mídia** do histórico (hoje vira aviso; o evogo entrega só a referência, seria preciso baixar com `/message/downloadmedia`), grupos e reações do histórico.
-- Grupos, reações, atualização do nome do contato.
+- Reações e atualização do nome do contato/grupo (o nome é lido só na criação). Grupos: sem menção/@ de participantes, sem histórico de grupos.
 - Tentar de novo mensagens que o Chatwoot marcou "Falha ao enviar".
 
 ## 3. Contrato com o Evolution Go (v0.7.3)

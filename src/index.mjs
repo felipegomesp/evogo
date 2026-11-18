@@ -91,7 +91,10 @@ async function inbound(inst, d) {
   const existing = await db.msg(inst.name, I.ID);
   if (existing?.cw_message_id) return; // eco de mensagem enviada pela ponte, ou reentrega
 
-  const { text, file, stanza } = extract({ ...M, base64: M.base64 ?? d.base64 });
+  const ex = extract({ ...M, base64: M.base64 ?? d.base64 });
+  const { file, stanza } = ex;
+  // em grupo, identifica quem falou (a conversa é uma só para o grupo todo)
+  const text = chat.endsWith('@g.us') && !I.IsFromMe && I.PushName ? `*${I.PushName}:*\n${ex.text}` : ex.text;
   const replyRow = stanza ? await db.msg(inst.name, stanza) : null;
   const send = (conv) => cw.createMessage(conv.cw_conversation_id, {
     content: text, type: I.IsFromMe ? 'outgoing' : 'incoming', sourceId: 'WAID:' + I.ID,

@@ -14,7 +14,7 @@ Integração **Evolution Go ⇄ Chatwoot**. O Evolution Go não tem Chatwoot nat
 | texto, reply, imagem, vídeo, áudio, documento, sticker | texto, reply, anexos |
 | editar e apagar mensagens (a edição chega cifrada e é decifrada pela ponte) | editar e apagar |
 | mensagens enviadas do próprio celular | assinatura do atendente (opcional) |
-| contato e conversa criados automaticamente (com tratamento do nono dígito) | tiques de **entregue** e **lido** |
+| contato e conversa criados automaticamente (com tratamento do nono dígito); **grupos** (uma conversa por grupo, com o nome de quem falou) | tiques de **entregue** e **lido** |
 
 Também: várias instâncias e várias contas do Chatwoot, e restauração automática do webhook quando o botão *Conectar* do manager o apaga.
 Especificação completa em [`FEATURES.md`](FEATURES.md).
@@ -58,7 +58,7 @@ Siga [`UPGRADE-EVOGO.md`](UPGRADE-EVOGO.md): passo a passo, rollback, checklist 
 
 ## Pendente
 
-Importar histórico do WhatsApp, grupos, reações e marcar como lido no celular ao abrir a conversa no Chatwoot.
+Reações, mídia do histórico e marcar como lido no celular ao abrir a conversa no Chatwoot.
 
 ## Licença e atribuição
 
