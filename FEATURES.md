@@ -41,6 +41,8 @@ O binário do Evolution Go **não é alterado**. Toda a lógica está na ponte.
 | Apagar | `message_updated` com `content_attributes.deleted` → `POST /message/delete` |
 | Editar | `message_updated` com conteúdo diferente (mensagens enviadas por atendente) → `POST /message/edit` |
 | Anti-eco | O `id` da mensagem é definido pela ponte e gravado **antes** do envio; mensagens com `source_id = WAID:…` e já mapeadas são ignoradas, evitando loop |
+| Anexos via proxy | O evogo não baixa o anexo direto do Chatwoot: a ponte serve `GET/HEAD /media/<segredo>/<url>` (rede interna), pois o evogo faz HEAD antes e o MinIO/S3 recusa HEAD em URL assinada |
+| Fallback por LID | Se o envio falhar com "not registered on WhatsApp", a ponte consulta `/user/check`, pega o `LID` e reenvia para `<lid>@lid` (a verificação do evogo erra para algumas contas) |
 | Falha de envio | Cria nota privada na conversa: "⚠️ Falha ao enviar ao WhatsApp: …" |
 
 ### 2.3 Cadastro e administração (painel no manager)

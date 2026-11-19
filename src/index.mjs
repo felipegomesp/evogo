@@ -144,7 +144,24 @@ async function receipt(inst, d) {
 
 // ---------- Chatwoot -> WhatsApp ----------
 const attType = { image: 'image', video: 'video', audio: 'audio', file: 'document' };
-const internalUrl = (u) => { try { const x = new URL(u); return config.chatwootUrl + x.pathname + x.search; } catch { return u; } };
+const internalUrl = (u) => { try { const x = new URL(u); return config.chatwootUrl + x.pathname.replace(/^\/{2,}/, '/') + x.search; } catch { return u; } };
+// O evogo faz HEAD no anexo antes de enviar; o MinIO/S3 recusa HEAD em URL assinada para GET (403 XML).
+// Por isso o evogo busca o anexo por este proxy interno, que responde HEAD e GET.
+const mediaProxyUrl = (u) => `${config.evogoWebhookBase}/media/${config.secret}/${Buffer.from(internalUrl(u)).toString('base64url')}`;
+
+async function serveMedia(req, res, secret, enc) {
+  if (!secret || !safeEq(secret, config.secret) || !enc) { res.statusCode = 401; res.end(); return; }
+  const target = Buffer.from(enc, 'base64url').toString();
+  if (!target.startsWith(config.chatwootUrl + '/')) { res.statusCode = 400; res.end(); return; }
+  const up = await fetch(target, { redirect: 'follow', signal: AbortSignal.timeout(60_000) });
+  if (!up.ok) { res.statusCode = 502; res.end(); return; }
+  const h = { 'Content-Type': up.headers.get('content-type') || 'application/octet-stream' };
+  if (up.headers.get('content-length')) h['Content-Length'] = up.headers.get('content-length');
+  res.writeHead(200, h);
+  if (req.method === 'HEAD') { res.end(); up.body?.cancel(); return; }
+  for await (const c of up.body) res.write(c);
+  res.end();
+}
 
 function sign(inst, b, text) {
   const name = b.sender?.available_name || b.sender?.name;
@@ -197,7 +214,7 @@ async function outbound(inst, b) {
         await evogo.sendText(inst.evogo_token, { number: chat, text: sign(inst, b, content), id, quoted });
       } else {
         await evogo.sendMedia(inst.evogo_token, {
-          number: chat, url: internalUrl(a.data_url), type: attType[a.file_type] ?? 'document',
+          number: chat, url: mediaProxyUrl(a.data_url), type: attType[a.file_type] ?? 'document',
           caption: content ? sign(inst, b, content) : undefined,
           filename: decodeURIComponent(new URL(a.data_url).pathname.split('/').pop() || 'arquivo'), id, quoted: i === 0 ? quoted : undefined,
         });
@@ -229,6 +246,7 @@ const server = http.createServer(async (req, res) => {
   try {
     if (kind === 'admin') { await handleAdmin(req, res, p1, readJson); return; }
     if (kind === 'message' && p1 === 'sendText' && req.method === 'POST') { await handleSendText(req, res, req.url.split('?')[0].split('/')[3], readJson); return; }
+    if (kind === 'media' && (req.method === 'GET' || req.method === 'HEAD')) { await serveMedia(req, res, p1, p2); return; }
     if (req.method === 'GET' && kind === 'health') { res.end('ok'); return; }
     if (req.method !== 'POST') { res.statusCode = 404; res.end(); return; }
     const secret = kind === 'evogo' ? p1 : p2;
