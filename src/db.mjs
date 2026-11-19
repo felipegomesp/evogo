@@ -74,6 +74,7 @@ export const db = {
       from ${T}instances i`);
     return new Map(r.rows.map((x) => [x.name, x]));
   },
+  async lastRunWithMessages(instance) { return (await pool.query(`select * from ${T}history_imports where instance=$1 and msgs_done>0 order by id desc limit 1`, [instance])).rows[0]; },
   async lastRun(instance) { return (await pool.query(`select * from ${T}history_imports where instance=$1 order by id desc limit 1`, [instance])).rows[0]; },
   async setStatus(instance, waId, status) { await pool.query(`update ${T}messages set wa_status=$3 where instance=$1 and wa_id=$2`, [instance, waId, status]); },
   async setContent(instance, waId, content) { await pool.query(`update ${T}messages set content=$3 where instance=$1 and wa_id=$2`, [instance, waId, content]); },

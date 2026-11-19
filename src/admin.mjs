@@ -28,7 +28,8 @@ async function state() {
   const [evo, mine, accounts, stats] = await Promise.all([evogoInstances(), db.allInstances(), db.accountIds(), db.stats()]);
   const byName = new Map(mine.map((i) => [i.name, i]));
   const runs = new Map(await Promise.all(evo.map(async (e) => [e.name, await db.lastRun(e.name)])));
-  const run = (r) => r && { status: r.status, chats: r.chats_total, chatsDone: r.chats_done, msgs: r.msgs_total, msgsDone: r.msgs_done, failed: r.failed, startedAt: r.started_at, finishedAt: r.finished_at, error: r.error };
+  const dataRuns = new Map(await Promise.all(evo.map(async (e) => [e.name, await db.lastRunWithMessages(e.name)])));
+  const run = (r) => r && { id: r.id, status: r.status, chats: r.chats_total, chatsDone: r.chats_done, msgs: r.msgs_total, msgsDone: r.msgs_done, failed: r.failed, startedAt: r.started_at, finishedAt: r.finished_at, error: r.error };
   const live = new Set(evo.map((e) => e.name));
   // webhook do evogo apontando para a ponte com os eventos esperados (só faz sentido para instância configurada)
   const webhookOk = (e, row) => {
@@ -39,7 +40,7 @@ async function state() {
   const st = (name) => { const x = stats.get(name); return x ? { conversations: x.conversations, messages: x.messages, messages24h: x.messages_24h, lastMessage: x.last_message } : null; };
   return {
     accounts,
-    instances: evo.map((e) => ({ name: e.name, connected: !!e.connected, number: (e.jid || '').split(':')[0].split('@')[0], bridge: publicInst(byName.get(e.name)) ?? null, webhookOk: webhookOk(e, byName.get(e.name)), stats: st(e.name), lastImport: run(runs.get(e.name)) ?? null })),
+    instances: evo.map((e) => ({ name: e.name, connected: !!e.connected, number: (e.jid || '').split(':')[0].split('@')[0], bridge: publicInst(byName.get(e.name)) ?? null, webhookOk: webhookOk(e, byName.get(e.name)), stats: st(e.name), lastImport: run(runs.get(e.name)) ?? null, lastImportWithData: run(dataRuns.get(e.name)) ?? null })),
     // instâncias que a ponte conhece mas o evogo não tem mais (a vigia remove sozinha em ~5 min; aqui dá para remover na hora)
     orphans: mine.filter((i) => !live.has(i.name)).map((i) => ({ name: i.name, accountId: i.account_id, inboxName: i.inbox_name, stats: st(i.name) })),
     events: recentEvents().slice(0, 40),

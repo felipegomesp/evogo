@@ -70,6 +70,8 @@
     return fetch(API + path, { method: method, headers: { apikey: KEY, 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined })
       .then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { if (!r.ok) { var e = new Error(j.error || 'Erro ' + r.status); e.status = r.status; throw e; } return j; }); });
   }
+  var STATUS = { concluida: 'concluída', concluida_com_falhas: 'concluída com falhas', running: 'em andamento', erro: 'erro' };
+  function status(x) { return STATUS[x] || x; }
   function host(u) { try { return new URL(u).host; } catch (e) { return u; } }
 
   function card(i) {
@@ -102,7 +104,14 @@
       g.appendChild(kv('Mensagens nas últimas 24 h', s.messages24h));
       g.appendChild(kv('Última mensagem', fmt(s.lastMessage)));
     }
-    if (r) g.appendChild(kv('Última importação de histórico', r.status + ' · ' + r.msgsDone + '/' + r.msgs + ' msgs' + (r.failed ? ' · ' + r.failed + ' falhas' : '') + ' · ' + (fmt(r.finishedAt || r.startedAt) || '')));
+    var d = i.lastImportWithData;
+    if (d) {
+      g.appendChild(kv('Histórico importado', d.msgsDone + ' de ' + d.msgs + ' msgs · ' + d.chatsDone + ' conversas' + (d.failed ? ' · ' + d.failed + ' falhas' : '') + ' · ' + (fmt(d.finishedAt || d.startedAt) || '') + ' (' + status(d.status) + ')'));
+      if (r && r.id !== d.id && (r.startedAt || '') > (d.startedAt || '')) g.appendChild(kv('Última verificação do histórico', status(r.status) + (r.msgsDone ? '' : ', sem mensagens novas') + ' · ' + (fmt(r.finishedAt || r.startedAt) || '')));
+    } else if (r) {
+      g.appendChild(kv('Importação de histórico', status(r.status) + ' · ' + (r.msgsDone || 0) + '/' + (r.msgs || 0) + ' msgs' + (r.failed ? ' · ' + r.failed + ' falhas' : '') + ' · ' + (fmt(r.finishedAt || r.startedAt) || '')));
+    }
+    if ((d && d.failed) || (r && r.failed)) top.appendChild(badge('Histórico com falhas', 'warn'));
     c.appendChild(g);
     return c;
   }
