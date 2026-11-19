@@ -1,15 +1,16 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import { config } from './config.mjs';
-import { log } from './log.mjs';
+import { log, recentEvents } from './log.mjs';
 import { db } from './db.mjs';
 import { Chatwoot } from './chatwoot.mjs';
 import { ensureInbox } from './inbox.mjs';
-import { listEvogoInstances, applyWebhook } from './webhook.mjs';
+import { listEvogoInstances, applyWebhook, expectedUrl, expectedEvents } from './webhook.mjs';
 import { testForward } from './forward.mjs';
 import { replayFromSamples } from './history.mjs';
 
 const panelJs = () => fs.readFileSync(new URL('./panel.js', import.meta.url));
+const overviewHtml = () => fs.readFileSync(new URL('./overview.html', import.meta.url));
 const safeEq = (a, b) => a.length === b.length && crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
 
 class HttpError extends Error { constructor(status, msg) { super(msg); this.status = status; } }
@@ -24,13 +25,24 @@ const publicInst = (i) => i && ({
 });
 
 async function state() {
-  const [evo, mine, accounts] = await Promise.all([evogoInstances(), db.allInstances(), db.accountIds()]);
+  const [evo, mine, accounts, stats] = await Promise.all([evogoInstances(), db.allInstances(), db.accountIds(), db.stats()]);
   const byName = new Map(mine.map((i) => [i.name, i]));
   const runs = new Map(await Promise.all(evo.map(async (e) => [e.name, await db.lastRun(e.name)])));
   const run = (r) => r && { status: r.status, chats: r.chats_total, chatsDone: r.chats_done, msgs: r.msgs_total, msgsDone: r.msgs_done, failed: r.failed, startedAt: r.started_at, finishedAt: r.finished_at, error: r.error };
+  const live = new Set(evo.map((e) => e.name));
+  // webhook do evogo apontando para a ponte com os eventos esperados (só faz sentido para instância configurada)
+  const webhookOk = (e, row) => {
+    if (!row) return null;
+    const ev = String(e.webhook ? e.events || '' : '').split(',').map((x) => x.trim()).filter(Boolean), want = expectedEvents(row);
+    return e.webhook === expectedUrl() && ev.length === want.length && want.every((x) => ev.includes(x));
+  };
+  const st = (name) => { const x = stats.get(name); return x ? { conversations: x.conversations, messages: x.messages, messages24h: x.messages_24h, lastMessage: x.last_message } : null; };
   return {
     accounts,
-    instances: evo.map((e) => ({ name: e.name, connected: !!e.connected, number: (e.jid || '').split(':')[0].split('@')[0], bridge: publicInst(byName.get(e.name)) ?? null, lastImport: run(runs.get(e.name)) ?? null })),
+    instances: evo.map((e) => ({ name: e.name, connected: !!e.connected, number: (e.jid || '').split(':')[0].split('@')[0], bridge: publicInst(byName.get(e.name)) ?? null, webhookOk: webhookOk(e, byName.get(e.name)), stats: st(e.name), lastImport: run(runs.get(e.name)) ?? null })),
+    // instâncias que a ponte conhece mas o evogo não tem mais (a vigia remove sozinha em ~5 min; aqui dá para remover na hora)
+    orphans: mine.filter((i) => !live.has(i.name)).map((i) => ({ name: i.name, accountId: i.account_id, inboxName: i.inbox_name, stats: st(i.name) })),
+    events: recentEvents().slice(0, 40),
   };
 }
 
@@ -101,6 +113,12 @@ export async function handleAdmin(req, res, action, readJson) {
   res.setHeader('Access-Control-Allow-Headers', 'apikey, content-type');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   if (req.method === 'OPTIONS') { res.statusCode = 204; res.end(); return; }
+  if (req.method === 'GET' && action === 'overview') { // página estática, sem segredos: pede a chave global e chama /admin/state
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.end(overviewHtml());
+    return;
+  }
   if (req.method === 'GET' && action === 'panel.js') {
     res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
     res.setHeader('Cache-Control', 'no-cache');
@@ -123,6 +141,14 @@ export async function handleAdmin(req, res, action, readJson) {
       const url = parseUrl(String(b.url || '').trim());
       try { return send(200, await testForward(url, String(b.instance || ''))); }
       catch (e) { return send(200, { ok: false, status: 0, error: e.name === 'TimeoutError' ? 'Tempo esgotado (15 s)' : e.message }); }
+    }
+    if (req.method === 'POST' && action === 'remove') { // só instância que não existe mais no evogo
+      const name = String((await readJson(req)).instance || '');
+      if ((await evogoInstances()).some((i) => i.name === name)) throw new HttpError(400, 'A instância ainda existe no Evolution Go. Use Desconectar no formulário dela.');
+      if (!(await db.allInstances()).some((i) => i.name === name)) throw new HttpError(404, 'A ponte não conhece essa instância.');
+      await db.removeInstance(name);
+      log.warn('instância removida da ponte pela tela de visão geral', { inst: name });
+      return send(200, { ok: true });
     }
     if (req.method === 'POST' && action === 'disconnect') {
       const b = await readJson(req);

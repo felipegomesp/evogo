@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ponte Evolution Go</title>
+<style>
+  :root{--bg:#f6f7f9;--card:#fff;--fg:#1b1f23;--mut:#667085;--line:#e3e6ea;--ok:#127a3d;--okbg:#e4f5ea;--bad:#b42318;--badbg:#fdeceb;--warn:#8a5a00;--warnbg:#fff4d6;--acc:#2563eb}
+  @media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#101215;--card:#181b20;--fg:#e8eaed;--mut:#98a2b3;--line:#2a2f37;--ok:#5fd18b;--okbg:#14301f;--bad:#ff8a80;--badbg:#3a1815;--warn:#f0c15a;--warnbg:#3a2e10;--acc:#6ea0ff}}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 system-ui,sans-serif}
+  main{max-width:1000px;margin:0 auto;padding:20px 16px 48px}
+  header{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:baseline;justify-content:space-between;margin-bottom:16px}
+  h1{font-size:20px;margin:0}h2{font-size:15px;margin:28px 0 10px}
+  .sub{color:var(--mut);font-size:13px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:10px}
+  .row{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center}
+  .name{font-weight:700;font-size:15px}.num{color:var(--mut)}
+  .badge{display:inline-block;padding:2px 9px;border-radius:99px;font-size:12px;font-weight:600;background:var(--line);color:var(--mut)}
+  .badge.ok{background:var(--okbg);color:var(--ok)}.badge.bad{background:var(--badbg);color:var(--bad)}.badge.warn{background:var(--warnbg);color:var(--warn)}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px 18px;margin-top:10px}
+  .k{color:var(--mut);font-size:12px}.v{font-weight:600;word-break:break-word}
+  button{font:inherit;border:1px solid var(--line);background:var(--card);color:var(--fg);padding:6px 12px;border-radius:7px;cursor:pointer}
+  button.danger{color:var(--bad);border-color:var(--bad)}button.pri{background:var(--acc);border-color:var(--acc);color:#fff}
+  input{font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:7px;background:var(--card);color:var(--fg);width:100%}
+  .ev{font:12px/1.5 ui-monospace,monospace;border-bottom:1px solid var(--line);padding:5px 0;word-break:break-word}
+  .ev:last-child{border:0}.ev .e{color:var(--bad)}.ev .w{color:var(--warn)}
+  .empty{color:var(--mut);padding:8px 0}
+  #login{max-width:420px;margin:12vh auto}
+  #msg{margin:10px 0;color:var(--bad)}
+  [hidden]{display:none!important}
+</style>
+</head>
+<body>
+<main>
+  <div id="login" hidden>
+    <h1>Ponte Evolution Go</h1>
+    <p class="sub">Informe a chave global do Evolution Go (a mesma do login do manager). Ela fica só nesta aba do navegador.</p>
+    <input id="key" type="password" placeholder="Chave global" autocomplete="off">
+    <p id="msg"></p>
+    <button class="pri" id="enter">Entrar</button>
+  </div>
+  <div id="app" hidden>
+    <header>
+      <div><h1>Ponte Evolution Go ⇄ Chatwoot</h1><div class="sub" id="upd"></div></div>
+      <div class="row"><button id="reload">Atualizar</button><button id="out">Sair</button></div>
+    </header>
+    <div id="err" class="card" style="color:var(--bad)" hidden></div>
+    <h2>Instâncias do Evolution Go</h2>
+    <div id="list"></div>
+    <div id="orph"></div>
+    <h2>Avisos e erros recentes (desde o último reinício da ponte)</h2>
+    <div class="card" id="events"></div>
+  </div>
+</main>
+<script>
+(function () {
+  'use strict';
+  var API = location.origin + '/admin', KEY = '';
+  var $ = function (id) { return document.getElementById(id); };
+  try { KEY = sessionStorage.getItem('ecw-key') || ''; } catch (e) {}
+  var m = /[#&]k=([^&]+)/.exec(location.hash);
+  if (m) { KEY = decodeURIComponent(m[1]); try { sessionStorage.setItem('ecw-key', KEY); } catch (e) {} history.replaceState(null, '', location.pathname); }
+
+  function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+  function badge(text, kind) { return el('span', 'badge ' + (kind || ''), text); }
+  function kv(k, v) { var d = el('div'); d.appendChild(el('div', 'k', k)); d.appendChild(el('div', 'v', v == null || v === '' ? '—' : String(v))); return d; }
+  function fmt(t) { if (!t) return null; var d = new Date(t); return isNaN(d) ? null : d.toLocaleString('pt-BR'); }
+  function api(method, path, body) {
+    return fetch(API + path, { method: method, headers: { apikey: KEY, 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined })
+      .then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { if (!r.ok) { var e = new Error(j.error || 'Erro ' + r.status); e.status = r.status; throw e; } return j; }); });
+  }
+  function host(u) { try { return new URL(u).host; } catch (e) { return u; } }
+
+  function card(i) {
+    var c = el('div', 'card'), top = el('div', 'row'), b = i.bridge, s = i.stats, r = i.lastImport;
+    top.appendChild(el('span', 'name', i.name));
+    if (i.number) top.appendChild(el('span', 'num', '+' + i.number));
+    top.appendChild(badge(i.connected ? 'WhatsApp conectado' : 'WhatsApp desconectado', i.connected ? 'ok' : 'bad'));
+    if (!b) top.appendChild(badge('Sem integração na ponte', 'warn'));
+    else {
+      if (b.chatwootEnabled) top.appendChild(badge('Chatwoot', 'ok'));
+      else if (b.accountId && !b.inboxId) top.appendChild(badge('Chatwoot sem caixa', 'bad'));
+      if (b.forwardUrl) top.appendChild(badge('n8n', 'ok'));
+      if (!b.enabled) top.appendChild(badge('Desconectada na ponte', 'warn'));
+      if (i.connected && i.webhookOk === false) top.appendChild(badge('Webhook divergente', 'bad'));
+      else if (i.webhookOk) top.appendChild(badge('Webhook ok', 'ok'));
+    }
+    c.appendChild(top);
+    var g = el('div', 'grid');
+    if (b) {
+      g.appendChild(kv('Conta do Chatwoot', b.accountId));
+      g.appendChild(kv('Caixa de entrada', b.inboxName ? b.inboxName + (b.inboxId ? ' (#' + b.inboxId + ')' : ' (não criada)') : null));
+      g.appendChild(kv('Webhook de automação', b.forwardUrl ? host(b.forwardUrl) : null));
+      g.appendChild(kv('Remetente da IA', b.botName));
+      var o = b.options || [], opts = [];
+      if (o.sign) opts.push('assinar'); if (o.reopen) opts.push('reabrir'); if (o.pending) opts.push('pendente'); if (!o.ignoreGroups) opts.push('grupos'); if (o.importHistory) opts.push('histórico ' + o.historyDays + 'd');
+      g.appendChild(kv('Opções', opts.join(', ')));
+    }
+    if (s) {
+      g.appendChild(kv('Conversas / mensagens', s.conversations + ' / ' + s.messages));
+      g.appendChild(kv('Mensagens nas últimas 24 h', s.messages24h));
+      g.appendChild(kv('Última mensagem', fmt(s.lastMessage)));
+    }
+    if (r) g.appendChild(kv('Última importação de histórico', r.status + ' · ' + r.msgsDone + '/' + r.msgs + ' msgs' + (r.failed ? ' · ' + r.failed + ' falhas' : '') + ' · ' + (fmt(r.finishedAt || r.startedAt) || '')));
+    c.appendChild(g);
+    return c;
+  }
+
+  function orphans(list) {
+    var box = $('orph'); box.textContent = '';
+    if (!list.length) return;
+    box.appendChild(el('h2', null, 'Na ponte, mas não existem mais no Evolution Go'));
+    box.appendChild(el('div', 'sub', 'A ponte remove sozinha em cerca de 5 minutos. Dá para remover agora. Conversas e mensagens já espelhadas são mantidas e a caixa do Chatwoot não é apagada.'));
+    list.forEach(function (o) {
+      var c = el('div', 'card'), row = el('div', 'row');
+      row.appendChild(el('span', 'name', o.name));
+      row.appendChild(badge('Só na ponte', 'warn'));
+      if (o.accountId) row.appendChild(el('span', 'num', 'conta ' + o.accountId + (o.inboxName ? ' · ' + o.inboxName : '')));
+      var btn = el('button', 'danger', 'Remover da ponte');
+      btn.addEventListener('click', function () {
+        if (!confirm('Remover "' + o.name + '" da ponte?')) return;
+        btn.disabled = true;
+        api('POST', '/remove', { instance: o.name }).then(load).catch(function (e) { alert(e.message); btn.disabled = false; });
+      });
+      row.appendChild(btn); c.appendChild(row); box.appendChild(c);
+    });
+  }
+
+  function events(list) {
+    var box = $('events'); box.textContent = '';
+    if (!list.length) { box.appendChild(el('div', 'empty', 'Nenhum aviso ou erro desde o último reinício.')); return; }
+    list.forEach(function (e) {
+      var d = el('div', 'ev'), t = fmt(e.t);
+      d.appendChild(el('span', e.lvl === 'error' ? 'e' : 'w', (e.lvl === 'error' ? 'ERRO ' : 'AVISO ')));
+      d.appendChild(document.createTextNode(t + (e.inst ? ' [' + e.inst + '] ' : ' ') + e.msg + (e.err ? ' — ' + e.err : '')));
+      box.appendChild(d);
+    });
+  }
+
+  function show(app) { $('login').hidden = app; $('app').hidden = !app; }
+  function load() {
+    return api('GET', '/state').then(function (s) {
+      show(true); $('err').hidden = true;
+      var l = $('list'); l.textContent = '';
+      if (!s.instances.length) l.appendChild(el('div', 'empty', 'Nenhuma instância no Evolution Go.'));
+      s.instances.forEach(function (i) { l.appendChild(card(i)); });
+      orphans(s.orphans || []); events(s.events || []);
+      $('upd').textContent = 'Atualizado às ' + new Date().toLocaleTimeString('pt-BR') + ' · atualiza sozinho a cada 15 s';
+    }).catch(function (e) {
+      if (e.status === 401 || e.status === 503) { try { sessionStorage.removeItem('ecw-key'); } catch (x) {} KEY = ''; show(false); $('msg').textContent = e.message; return; }
+      show(true); $('err').hidden = false; $('err').textContent = 'Não consegui atualizar: ' + e.message;
+    });
+  }
+  $('enter').addEventListener('click', function () { KEY = $('key').value.trim(); if (!KEY) return; try { sessionStorage.setItem('ecw-key', KEY); } catch (e) {} $('msg').textContent = ''; load(); });
+  $('key').addEventListener('keydown', function (e) { if (e.key === 'Enter') $('enter').click(); });
+  $('reload').addEventListener('click', load);
+  $('out').addEventListener('click', function () { try { sessionStorage.removeItem('ecw-key'); } catch (e) {} KEY = ''; show(false); });
+  if (KEY) load(); else show(false);
+  setInterval(function () { if (KEY && !document.hidden) load(); }, 15000);
+})();
+</script>
+</body>
+</html>

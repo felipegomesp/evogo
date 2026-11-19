@@ -24,14 +24,30 @@ export async function applyWebhook(inst, evogoToken = inst.evogo_token) {
 
 // O botão "Conectar" do manager (e reinícios) zera o webhook da instância. Esta vigia detecta e restaura.
 let running = false;
+// Instância apagada no evogo: sai da ponte depois de MISS_LIMIT verificações seguidas sem aparecer (10 s cada = 5 min),
+// para não reagir a falhas momentâneas. Conversas/mensagens já espelhadas são mantidas; a caixa no Chatwoot não é apagada.
+const MISS_LIMIT = 30;
+const misses = new Map();
 export async function reconcile() {
   if (running || !config.evogoGlobalKey) return;
   running = true;
   try {
     const live = await listEvogoInstances();
-    for (const inst of await db.instances()) {
+    if (!Array.isArray(live)) throw new Error('lista de instâncias do evogo em formato inesperado');
+    for (const inst of await db.allInstances()) {
       const ev = live.find((i) => i.name === inst.name);
-      if (!ev) continue;
+      if (!ev) {
+        const n = (misses.get(inst.name) ?? 0) + 1;
+        misses.set(inst.name, n);
+        if (n >= MISS_LIMIT) {
+          await db.removeInstance(inst.name);
+          misses.delete(inst.name);
+          log.warn('instância removida da ponte (não existe mais no evogo)', { inst: inst.name });
+        }
+        continue;
+      }
+      misses.delete(inst.name);
+      if (!inst.enabled) continue;
       const reason = webhookReason(inst, ev);
       if (!reason) continue;
       log.warn('webhook divergente no evogo; restaurando', { inst: inst.name, motivo: reason, tinhaWebhook: !!ev.webhook, eventos: String(ev.events || '') });

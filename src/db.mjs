@@ -26,6 +26,7 @@ export const db = {
       [i.name, i.evogo_token, i.account_id ?? null, i.chatwoot_token ?? null, i.inbox_id ?? null, i.inbox_name ?? null, !!i.sign_msg, !!i.reopen_conversation,
         !!i.conversation_pending, i.ignore_groups !== false, !!i.import_history, !!i.chatwoot_enabled, i.forward_url || null, i.forward_format || 'evolution-v2', i.bot_name || null, i.bot_id ?? null, Number.isInteger(i.history_days) ? i.history_days : 90]);
   },
+  async removeInstance(name) { await pool.query(`delete from ${T}instances where name=$1`, [name]); },
   async disable(name) { await pool.query(`update ${T}instances set enabled=false where name=$1`, [name]); },
   async instance(name) { return (await pool.query(`select * from ${T}instances where name=$1 and enabled`, [name])).rows[0]; },
   async setInbox(name, id, inboxName) { await pool.query(`update ${T}instances set inbox_id=$2, inbox_name=$3 where name=$1`, [name, id, inboxName]); },
@@ -63,6 +64,15 @@ export const db = {
   async updateRun(id, patch) {
     const keys = Object.keys(patch); if (!keys.length) return;
     await pool.query(`update ${T}history_imports set ${keys.map((k, i) => `${k}=$${i + 2}`).join(',')} where id=$1`, [id, ...keys.map((k) => patch[k])]);
+  },
+  async stats() {
+    const r = await pool.query(`select i.name,
+      (select count(*) from ${T}conversations c where c.instance=i.name)::int as conversations,
+      (select count(*) from ${T}messages m where m.instance=i.name)::int as messages,
+      (select count(*) from ${T}messages m where m.instance=i.name and m.created_at > now() - interval '24 hours')::int as messages_24h,
+      (select max(m.created_at) from ${T}messages m where m.instance=i.name) as last_message
+      from ${T}instances i`);
+    return new Map(r.rows.map((x) => [x.name, x]));
   },
   async lastRun(instance) { return (await pool.query(`select * from ${T}history_imports where instance=$1 order by id desc limit 1`, [instance])).rows[0]; },
   async setStatus(instance, waId, status) { await pool.query(`update ${T}messages set wa_status=$3 where instance=$1 and wa_id=$2`, [instance, waId, status]); },

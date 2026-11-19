@@ -205,9 +205,18 @@
     if (added) loadState(false).then(mark).catch(function () {});
   }
 
+  // atalho para a visão geral da ponte (abre em outra aba; a chave vai no fragmento da URL, que não é enviado ao servidor)
+  function overviewLink() {
+    var on = location.pathname.indexOf('/manager') === 0 && !!auth(), cur = document.getElementById('ecw-ponte');
+    if (!on) { if (cur) cur.remove(); return; }
+    if (cur) return;
+    var a = h('a', { id: 'ecw-ponte', href: '#', title: 'Visão geral da ponte Evolution Go ⇄ Chatwoot', style: 'position:fixed;right:14px;bottom:14px;z-index:9999;background:#25d366;color:#fff;font:600 13px system-ui,sans-serif;padding:8px 14px;border-radius:99px;box-shadow:0 2px 10px rgba(0,0,0,.3);text-decoration:none' }, 'Ponte');
+    a.addEventListener('click', function (ev) { ev.preventDefault(); window.open(API + '/overview#k=' + encodeURIComponent(auth() || ''), '_blank', 'noopener'); });
+    document.body.appendChild(a);
+  }
   var raf = 0;
   new MutationObserver(function () { if (!raf) raf = requestAnimationFrame(function () { raf = 0; enhance(); }); }).observe(document.documentElement, { childList: true, subtree: true });
-  setInterval(function () { enhance(); if (cache.data) mark(); }, 2000);
+  setInterval(function () { enhance(); overviewLink(); if (cache.data) mark(); }, 2000);
   enhance();
 
   window.__evogoChatwoot = { open: openFor };
